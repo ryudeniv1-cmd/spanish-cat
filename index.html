@@ -18,6 +18,28 @@
     />
   </head>
   <body>
+    <!--
+      Ключ прозрачности для роликов персонажей. Клипы отрисованы на чёрном
+      фоне; mix-blend-mode здесь не годится — lighten оставляет фон видимым
+      сквозь тёмную одежду, и персонаж выглядит полупрозрачным. Фильтр
+      переносит яркость в альфу: чистый чёрный становится прозрачным, а всё
+      остальное непрозрачным. Пологий участок у нуля сохраняет сглаженный
+      край фигуры, иначе по контуру идёт тёмная кайма.
+    -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <filter id="luma-key" color-interpolation-filters="sRGB">
+        <feColorMatrix
+          type="matrix"
+          values="1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0.33 0.5 0.17 0 0"
+        />
+        <feComponentTransfer>
+          <feFuncA type="linear" slope="60" intercept="-0.25" />
+        </feComponentTransfer>
+      </filter>
+    </svg>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

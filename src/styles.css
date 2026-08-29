@@ -544,7 +544,9 @@ button {
   text-shadow: 0 0 12px var(--accent-glow);
 }
 
-/* Персонаж стоит подошвами на центре эллипса: низ ролика = «земля». */
+/* Персонаж стоит подошвами на центре эллипса: низ ролика = «земля».
+   Чёрный фон снимается ключом по яркости (#luma-key в index.html), а не
+   смешиванием: lighten просвечивал фоном сквозь тёмную одежду. */
 .hero-video {
   position: absolute;
   left: 34%;
@@ -553,7 +555,7 @@ button {
   height: 78%;
   object-fit: contain;
   object-position: center bottom;
-  mix-blend-mode: lighten;
+  filter: url(#luma-key);
   opacity: 0;
   transition: opacity 0.42s linear;
   pointer-events: none;
@@ -1611,10 +1613,10 @@ button {
   background: radial-gradient(120% 90% at 50% 100%, rgba(255, 255, 255, 0.03), transparent 70%), #0a0f1d;
 }
 
-/* У роликов фон чёрный: lighten растворяет его в фоне карточки, и фигура
-   стоит прямо на ней, без чёрного прямоугольника вокруг. */
+/* Тот же ключ, что и на Today: у тёмных персонажей смешивание давало
+   полупрозрачность. */
 .char-video {
-  mix-blend-mode: lighten;
+  filter: url(#luma-key);
 }
 
 /* siluet.png непрозрачный — тёмная фигура со свечением на тёмном фоне.
