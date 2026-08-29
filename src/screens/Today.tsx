@@ -2,16 +2,17 @@
 // задание на сегодня, повторение и карта сектора.
 // Вся палитра экрана идёт от --accent, то есть от экипированного клинка.
 import { motion } from 'framer-motion';
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { CHARACTERS, clipUrls, isCharacterUnlocked } from '../data/characters';
 import { LEVEL_BOUNDS, WORDS } from '../data/words';
 import { haptic } from '../telegram';
 import { BLADES, bladeById, nextBlade, unlockedBlades } from '../theme/blades';
-import { BladeGlyph, webglAvailable } from '../three/glyph';
-import { LazyBladeScene as BladeScene } from '../three/lazy';
+import { applyAccent } from '../theme/accent';
+import { DEBUG_BLADES } from '../debug';
 import { IdleCycler } from '../components/CharacterMedia';
+import { TodayStage } from '../components/TodayStage';
 import { MiniMap } from '../components/MiniMap';
 import { Panel } from '../components/Panel';
 import { warpStarfield } from '../components/Background';
@@ -73,14 +74,15 @@ export function Today() {
 
   const queue = store.queueIds();
   const due = store.dueList();
-  const learned = store.learnedCount();
+  const realLearned = store.learnedCount();
+  // ВРЕМЕННО: в режиме просмотра все пороги считаются достигнутыми
+  const learned = DEBUG_BLADES ? BLADES[BLADES.length - 1].threshold : realLearned;
   const unlocked = unlockedBlades(learned);
   const equipped = bladeById(store.meta.equipped_blade) ?? unlocked[unlocked.length - 1];
   const next = nextBlade(learned);
   const level = store.currentLevel();
   const stats = store.levelStats();
   const ls = stats.find((s) => s.level === level)!;
-  const webgl = useMemo(() => webglAvailable(), []);
 
   const streak = store.streakDays();
   const doneToday = store.learnedToday();
@@ -132,49 +134,37 @@ export function Today() {
             </div>
           )}
 
-          <div className="today-stage">
-            <div className="saber-col">
-              <div className="saber-frame">
-                <div className="saber-frame__in">
-                  {equipped && webgl ? (
-                    <BladeScene blade={equipped} cameraZ={6.5} />
-                  ) : (
-                    <BladeGlyph
-                      blade={equipped ?? BLADES[0]}
-                      locked={!equipped}
-                      className="blade-glyph blade-glyph--frame"
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="saber-tag">
-                <span className="saber-tag__cap">ТЕКУЩИЙ МЕЧ</span>
-                <span className="saber-tag__name">
-                  {equipped ? equipped.name.toUpperCase() : 'НЕ ВЫБРАН'}
-                </span>
-              </div>
-            </div>
-
-            <div className="hero-col">
-              <div className="hero-stage">
-                {/* платформа отдельной обёрткой: параллакс висит на ней,
-                    а не на общем родителе — иначе он изолирует смешивание
-                    и чёрный фон ролика перестаёт растворяться в небе */}
-                <div className="platform-wrap" aria-hidden="true">
-                  <div className="platform">
-                    <span className="platform__ring platform__ring--1" />
-                    <span className="platform__ring platform__ring--2" />
-                    <span className="platform__ring platform__ring--3" />
-                  </div>
-                  <div className="platform__disc" />
-                  <div className="platform__wave" />
-                </div>
-                {companion && <IdleCycler sources={clipUrls(companion)} className="hero-video" />}
-              </div>
-            </div>
+          <TodayStage blade={equipped}>
+            {companion && <IdleCycler sources={clipUrls(companion)} className="hero-video" />}
+          </TodayStage>
+          <div className="saber-cap">
+            <span className="saber-cap__t">ТЕКУЩИЙ МЕЧ</span>
+            <span className="saber-cap__n">
+              {equipped ? equipped.name.toUpperCase() : 'НЕ ВЫБРАН'}
+            </span>
           </div>
         </div>
       </div>
+
+      {/* ВРЕМЕННО: переключатель для просмотра всех клинков */}
+      {DEBUG_BLADES && (
+        <div className="blade-switch">
+          {BLADES.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              className={`blade-switch__b ${equipped?.id === b.id ? 'is-on' : ''}`}
+              style={{ '--sw': b.accent } as CSSProperties}
+              onClick={() => {
+                store.equipBlade(b.id);
+                applyAccent(b);
+              }}
+            >
+              {b.tier}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ===== прогресс до следующего клинка ===== */}
       <motion.div custom={0} variants={stagger} initial="hidden" animate="show">

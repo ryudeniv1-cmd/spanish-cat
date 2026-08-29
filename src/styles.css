@@ -433,21 +433,15 @@ button {
    Прогрессивное улучшение: где scroll-timeline нет, блок едет как обычно. */
 @supports (animation-timeline: scroll()) {
   @media (prefers-reduced-motion: no-preference) {
-    .saber-col,
+    .stage__c,
     .streak,
-    .platform-wrap,
+    .saber-cap,
     .hero-video {
       animation: today-parallax linear both;
       animation-timeline: scroll(root block);
       animation-range: 0 340px;
     }
   }
-}
-
-.platform-wrap {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
 }
 
 @keyframes today-parallax {
@@ -457,12 +451,23 @@ button {
   }
 }
 
-.today-stage {
-  display: grid;
-  grid-template-columns: 0.6fr 1fr;
-  gap: 10px;
+/* Сцена целиком на двух холстах: между ними лежит <video> персонажа,
+   поэтому ближние дуги колец проходят перед ногами, а дальние — за ними. */
+.stage {
+  position: relative;
   height: 100%;
-  align-items: end;
+}
+
+.stage__c {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.stage__c--front {
+  z-index: 2;
 }
 
 /* --- серия --- */
@@ -506,67 +511,19 @@ button {
   margin-top: 2px;
 }
 
-/* --- клинок в рамке со срезанными углами --- */
-.saber-col {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-width: 0;
-}
-
-.saber-frame {
-  --cut: 15px;
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  padding: 1.5px;
-  background: linear-gradient(
-    180deg,
-    var(--accent-dim),
-    rgba(255, 255, 255, 0.09) 45%,
-    var(--accent-dim)
-  );
-  clip-path: polygon(
-    var(--cut) 0,
-    calc(100% - var(--cut)) 0,
-    100% var(--cut),
-    100% calc(100% - var(--cut)),
-    calc(100% - var(--cut)) 100%,
-    var(--cut) 100%,
-    0 calc(100% - var(--cut)),
-    0 var(--cut)
-  );
-  filter: drop-shadow(0 0 16px var(--accent-glow));
-}
-
-.saber-frame__in {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  clip-path: inherit;
-  background: linear-gradient(180deg, rgba(9, 12, 24, 0.94), rgba(4, 7, 14, 0.97));
-}
-
-.saber-frame__in canvas {
-  touch-action: pan-y;
-}
-
-.blade-glyph--frame {
-  width: auto;
-  height: 82%;
-  margin: 9% auto;
-}
-
-.saber-tag {
-  margin-top: 9px;
-  padding: 7px 8px 8px;
+/* Подпись под рукоятью: без плашки, по центру своей половины. */
+.saber-cap {
+  position: absolute;
+  left: 21%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  z-index: 3;
   text-align: center;
-  background: rgba(255, 255, 255, 0.045);
-  clip-path: polygon(11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%, 0 11px);
+  user-select: none;
+  pointer-events: none;
 }
 
-.saber-tag__cap {
+.saber-cap__t {
   display: block;
   font-family: var(--font-mono);
   font-size: 8.5px;
@@ -574,146 +531,54 @@ button {
   color: var(--text2);
 }
 
-.saber-tag__name {
+.saber-cap__n {
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.04em;
+  font-size: 14px;
+  letter-spacing: 0.05em;
   color: var(--accent);
   text-shadow: 0 0 12px var(--accent-glow);
-  overflow-wrap: anywhere;
 }
 
-/* --- персонаж на платформе --- */
-.hero-col {
-  position: relative;
-  height: 100%;
-  min-width: 0;
-}
-
-.hero-stage {
-  position: relative;
-  height: 100%;
-}
-
-/* У роликов фон чёрный: lighten растворяет его в звёздном небе. */
+/* Персонаж стоит подошвами на центре эллипса: низ ролика = «земля». */
 .hero-video {
   position: absolute;
-  left: 0;
+  left: 34%;
   right: 0;
-  bottom: 7%;
-  width: 100%;
-  height: 93%;
+  bottom: 16%;
+  height: 78%;
   object-fit: contain;
   object-position: center bottom;
   mix-blend-mode: lighten;
   opacity: 0;
   transition: opacity 0.42s linear;
   pointer-events: none;
+  z-index: 1;
 }
 
-/* Кольца: диск «положен» через rotateX, дуги видно при вращении.
-   Анимируется только transform — композитор тянет это без затрат. */
-.platform {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 96%;
-  aspect-ratio: 1 / 1;
-  transform: translate(-50%, 41%) rotateX(74deg);
-  pointer-events: none;
+/* ВРЕМЕННО: переключатель клинков для просмотра */
+.blade-switch {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin: 0 0 14px;
 }
 
-/* Ровная тусклая окружность плюс яркая дуга, которая по ней бежит:
-   вращение видно, а кольца читаются как кольца. */
-.platform__ring {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  border-radius: 50%;
-  border: 1px solid var(--accent-soft);
+.blade-switch__b {
+  padding: 6px 0;
+  border-radius: 9px;
+  border: 1px solid var(--sw);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--sw);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
-.platform__ring::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 58%, var(--accent) 72% 86%, transparent 97% 100%);
-  -webkit-mask: radial-gradient(closest-side, transparent 92%, #000 95%);
-  mask: radial-gradient(closest-side, transparent 92%, #000 95%);
-  animation: ring-spin var(--ring-dur) linear infinite;
-  will-change: transform;
-}
-
-.platform__ring--1 {
-  width: 100%;
-  height: 100%;
-  --ring-dur: 28s;
-}
-
-.platform__ring--2 {
-  width: 73%;
-  height: 73%;
-  --ring-dur: 19s;
-}
-
-.platform__ring--2::after {
-  animation-direction: reverse;
-}
-
-.platform__ring--3 {
-  width: 48%;
-  height: 48%;
-  --ring-dur: 13s;
-}
-
-@keyframes ring-spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-/* мягкое пятно света под ногами */
-.platform__disc {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 66%;
-  height: 17%;
-  transform: translate(-50%, 32%);
-  background: radial-gradient(ellipse at 50% 50%, var(--accent-glow), transparent 72%);
-  pointer-events: none;
-}
-
-/* волна: свет поднимается от платформы до колен и гаснет, цикл 3 с */
-.platform__wave {
-  position: absolute;
-  left: 50%;
-  bottom: 2%;
-  width: 62%;
-  height: 44%;
-  background: radial-gradient(ellipse at 50% 100%, var(--accent-glow) 0%, transparent 70%);
-  mix-blend-mode: screen;
-  pointer-events: none;
-  animation: wave-rise 3s ease-out infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes wave-rise {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(12%) scaleY(0.45);
-  }
-  22% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-52%) scaleY(1.05);
-  }
+.blade-switch__b.is-on {
+  background: var(--sw);
+  color: #080c14;
 }
 
 /* --- прогресс до следующего клинка --- */
@@ -979,15 +844,11 @@ button {
   height: 100%;
 }
 
-/* На узком экране клинок уже, персонаж крупнее — но по-прежнему рядом. */
+/* На узком экране персонаж крупнее, меч — уже: холст рисует по долям
+   ширины, поэтому двигать нужно только ролик. */
 @media (max-width: 400px) {
-  .today-stage {
-    grid-template-columns: 0.46fr 1fr;
-    gap: 6px;
-  }
-
-  .saber-frame {
-    --cut: 12px;
+  .hero-video {
+    left: 30%;
   }
 }
 
@@ -1948,14 +1809,8 @@ button {
   .ring-seg--lit {
     animation: none;
   }
-  .platform__ring::after,
-  .btn-start::after,
-  .today-top__inner {
+  .btn-start::after {
     animation: none;
-  }
-  .platform__wave {
-    animation: none;
-    opacity: 0.45;
   }
   .btn,
   .chip,
