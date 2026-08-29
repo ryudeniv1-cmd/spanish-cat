@@ -303,8 +303,22 @@ export class AppStore {
     return n;
   }
 
+  /** Уровни, пройденные целиком: каждое слово «Знаю», «Повторяю» или «Освоено». */
+  completedLevels(): Level[] {
+    return this.levelStats()
+      .filter((s) => s.learning === 0 && s.fresh === 0)
+      .map((s) => s.level);
+  }
+
   equipBlade(id: string): void {
     this.meta.equipped_blade = id;
+    this.persistMeta();
+    this.emit();
+  }
+
+  /** Персонаж на экране Today; '' — убрать. */
+  equipCharacter(id: string): void {
+    this.meta.equipped_character = id;
     this.persistMeta();
     this.emit();
   }

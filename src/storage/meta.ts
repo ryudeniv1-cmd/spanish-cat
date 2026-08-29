@@ -7,6 +7,7 @@ export interface MetaData {
   last_refill_date: string; // YYYY-MM-DD последнего пополнения очереди
   sentences_total: number; // всего написанных примеров (испанских предложений)
   equipped_blade: string; // id экипированного клинка ('' — ещё нет)
+  equipped_character: string; // id персонажа на экране Today ('' — не выбран)
   blades_seen: number; // сколько порогов клинков уже показано сценой открытия
 }
 
@@ -17,6 +18,7 @@ export const DEFAULT_META: MetaData = {
   last_refill_date: '',
   sentences_total: 0,
   equipped_blade: '',
+  equipped_character: '',
   blades_seen: 0,
 };
 
@@ -31,6 +33,7 @@ export function parseMeta(raw: string | null): MetaData {
       last_refill_date: typeof m.last_refill_date === 'string' ? m.last_refill_date : '',
       sentences_total: Math.max(0, Number(m.sentences_total ?? 0) || 0),
       equipped_blade: typeof m.equipped_blade === 'string' ? m.equipped_blade : '',
+      equipped_character: typeof m.equipped_character === 'string' ? m.equipped_character : '',
       blades_seen: Math.max(0, Number(m.blades_seen ?? 0) || 0),
     };
   } catch {

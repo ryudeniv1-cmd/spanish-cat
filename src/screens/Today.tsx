@@ -4,12 +4,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from '../AppContext';
+import { CHARACTERS, clipUrls, isCharacterUnlocked } from '../data/characters';
 import { LEVEL_BOUNDS, WORDS } from '../data/words';
 import { haptic } from '../telegram';
 import { BLADES, bladeById, nextBlade, unlockedBlades } from '../theme/blades';
 import { BladeGlyph, webglAvailable } from '../three/glyph';
 import { LazyBladeScene as BladeScene } from '../three/lazy';
 import { LevelBadge } from '../components/badges';
+import { IdleVideo } from '../components/CharacterMedia';
 import { ExampleRing } from '../components/ExampleRing';
 import { MiniMap } from '../components/MiniMap';
 import { Panel } from '../components/Panel';
@@ -38,6 +40,15 @@ export function Today() {
   const level = store.currentLevel();
   const stats = store.levelStats();
   const ls = stats.find((s) => s.level === level)!;
+
+  // персонаж с вкладки Crew: рядом с клинком, на узком экране — над карточкой слова
+  const companion = useMemo(() => {
+    const c = CHARACTERS.find((x) => x.id === store.meta.equipped_character);
+    if (!c) return null;
+    const p = { learned: store.learnedCount(), completedLevels: store.completedLevels() };
+    return isCharacterUnlocked(c, p) ? c : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, version]);
 
   const [idx, setIdx] = useState(0);
   const [showAll, setShowAll] = useState(false);
@@ -84,35 +95,57 @@ export function Today() {
 
   return (
     <div>
-      {/* 3D-клинок или силуэт до первого открытия */}
-      <motion.div className="blade-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
-        {equipped && webgl ? (
-          <BladeScene blade={equipped} />
-        ) : (
-          // до первого открытия и без WebGL — силуэт во весь рост сцены
-          // подпись не нужна: порог уже виден в полосе прогресса под сценой
-          <div className="blade-stage__fallback">
-            <BladeGlyph blade={equipped ?? BLADES[0]} locked={!equipped} className="blade-glyph blade-glyph--stage" />
-          </div>
-        )}
-      </motion.div>
-      <div className="blade-progress">
-        {next ? (
-          <>
-            <span className="mono" style={{ letterSpacing: '0.08em' }}>
-              {learned} / {next.threshold}
-            </span>
-            <div className="blade-progress__bar">
-              <div className="blade-progress__fill" style={{ width: `${progress * 100}%` }} />
+      {/* 3D-клинок, персонаж и полоса прогресса: порядок задаётся order в CSS */}
+      <div className="today-hero">
+        {/* 3D-клинок или силуэт до первого открытия */}
+        <motion.div className="blade-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
+          {equipped && webgl ? (
+            <BladeScene blade={equipped} />
+          ) : (
+            // до первого открытия и без WebGL — силуэт во весь рост сцены
+            // подпись не нужна: порог уже виден в полосе прогресса под сценой
+            <div className="blade-stage__fallback">
+              <BladeGlyph blade={equipped ?? BLADES[0]} locked={!equipped} className="blade-glyph blade-glyph--stage" />
             </div>
-            <span style={{ width: 20, height: 40, display: 'inline-flex' }}>
-              <BladeGlyph blade={next} locked className="" />
+          )}
+        </motion.div>
+        <div className="blade-progress">
+          {next ? (
+            <>
+              <span className="mono" style={{ letterSpacing: '0.08em' }}>
+                {learned} / {next.threshold}
+              </span>
+              <div className="blade-progress__bar">
+                <div className="blade-progress__fill" style={{ width: `${progress * 100}%` }} />
+              </div>
+              <span style={{ width: 20, height: 40, display: 'inline-flex' }}>
+                <BladeGlyph blade={next} locked className="" />
+              </span>
+            </>
+          ) : (
+            <span className="mono" style={{ margin: '0 auto' }}>
+              все клинки открыты
             </span>
-          </>
-        ) : (
-          <span className="mono" style={{ margin: '0 auto' }}>
-            все клинки открыты
-          </span>
+          )}
+        </div>
+        {companion && (
+          <motion.button
+            type="button"
+            className="today-companion"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            onClick={() => navigate('/armory')}
+            aria-label={`Экипаж: ${companion.name}`}
+          >
+            <IdleVideo
+              sources={clipUrls(companion)}
+              className="today-companion__video"
+              label={companion.name}
+              standalone
+            />
+            <span className="today-companion__name">{companion.name}</span>
+          </motion.button>
         )}
       </div>
 
