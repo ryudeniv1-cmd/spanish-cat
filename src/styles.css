@@ -447,85 +447,30 @@ button {
   transition: width 0.6s var(--ease);
 }
 
-/* Клинок, персонаж и полоса прогресса. Порядок задаётся order:
-   узкий экран — клинок, полоса, персонаж (над карточкой слова);
-   широкий — клинок и персонаж в ряд, полоса под ними. */
-.today-hero {
-  display: flex;
-  flex-direction: column;
-}
-
-.today-hero .blade-stage {
-  order: 1;
-}
-
-.today-hero .blade-progress {
-  order: 2;
-}
-
-.today-companion {
-  order: 3;
-  position: relative;
-  display: block;
-  width: 128px;
-  aspect-ratio: 3 / 4;
-  margin: 0 auto 14px;
-  padding: 0;
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  overflow: hidden;
-  background: #0c1120;
-  box-shadow: 0 0 22px var(--accent-glow);
-}
-
-.today-companion__video {
-  position: absolute;
+/* Выбранный персонаж — фоновый слой Today.
+   z-index не задаём: слой идёт в DOM после .bg-canvas (z-index 0), поэтому
+   рисуется поверх неба, но ниже .app (z-index 1) — то есть позади всего
+   содержимого. mix-blend-mode здесь, а не на видео: у ролика фон чёрный,
+   lighten растворяет его в звёздном небе, остаётся только фигура. */
+.companion-layer {
+  position: fixed;
   inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  mix-blend-mode: lighten;
+  /* приглушён, иначе светлая фигура забивает текст в панелях поверх неё */
+  opacity: 0.32;
+}
+
+.companion-layer__video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center bottom;
   display: block;
-}
-
-.today-companion__name {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 16px 6px 5px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text);
-  background: linear-gradient(180deg, transparent, rgba(4, 6, 12, 0.85));
-}
-
-@media (min-width: 520px) {
-  .today-hero {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .today-hero .blade-stage {
-    flex: 1 1 0;
-    min-width: 0;
-    margin: -4px 0 6px;
-  }
-
-  .today-companion {
-    order: 2;
-    flex: 0 0 auto;
-    width: auto;
-    height: min(34dvh, 300px);
-    margin: 0 0 6px;
-  }
-
-  .today-hero .blade-progress {
-    order: 3;
-    flex: 1 1 100%;
-  }
 }
 
 .word-hero {
@@ -1231,8 +1176,9 @@ button {
 /* --- переключатель Blades / Crew --- */
 .seg {
   position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* flex, а не grid: у абсолютной пилюли внутри грида containing block —
+     ячейка, а не весь контрол, и проценты считаются не от того */
+  display: flex;
   gap: 4px;
   padding: 4px;
   margin: 0 0 14px;
@@ -1243,6 +1189,7 @@ button {
 
 .seg__btn {
   position: relative;
+  flex: 1 1 0;
   border: none;
   background: none;
   padding: 9px 10px;
@@ -1259,12 +1206,21 @@ button {
   color: #071018;
 }
 
+/* Одна пилюля на весь контрол, ездит трансформом. */
 .seg__pill {
   position: absolute;
-  inset: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 6px);
   border-radius: 11px;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   box-shadow: 0 4px 18px var(--accent-glow);
+  transition: transform 0.3s var(--ease);
+}
+
+.seg__pill--right {
+  transform: translateX(calc(100% + 4px));
 }
 
 .seg__label {
@@ -1527,6 +1483,7 @@ button {
   .chip,
   .dot,
   .ring-seg,
+  .seg__pill,
   .blade-progress__fill {
     transition-property: opacity;
   }

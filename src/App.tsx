@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from './AppContext';
 import { Background } from './components/Background';
+import { CompanionLayer } from './components/CompanionLayer';
 import { TabBar } from './components/TabBar';
 import { applyAccent } from './theme/accent';
 import { BLADES, bladeById, unlockedBlades } from './theme/blades';
@@ -15,16 +16,15 @@ import { Today } from './screens/Today';
 import { UnlockOverlay } from './screens/UnlockOverlay';
 import { WordCard } from './screens/WordCard';
 
-// Смена вкладки — сдвиг вбок; открытие карточки слова — раскрытие из строки
+// Смена вкладки — сдвиг вбок; открытие карточки слова — раскрытие из строки.
+// Только появление: анимации ухода здесь быть не может — см. Layout.
 const SLIDE = {
   initial: { opacity: 0, x: 26 },
   animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -26 },
 };
 const EXPAND = {
   initial: { opacity: 0, scale: 0.93, y: 18 },
   animate: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.96 },
 };
 
 function Layout() {
@@ -34,16 +34,21 @@ function Layout() {
   return (
     <>
       <Background />
+      {/* персонаж поверх неба, но под всем содержимым — только на Today */}
+      {location.pathname === '/' && <CompanionLayer />}
       <div className={bare ? 'app app--bare' : 'app'}>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={location.pathname}
-            {...(card ? EXPAND : SLIDE)}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
+        {/* Смена key перемонтирует обёртку — этого достаточно, чтобы новый
+            экран появился с анимацией. AnimatePresence с exit здесь работать
+            не может: <Outlet/> внутри «уходящего» элемента рендерит уже новый
+            маршрут, поэтому наружу уезжал не старый экран, а новый — он же
+            и оставался невидимым, если анимация ухода не доигрывала. */}
+        <motion.div
+          key={location.pathname}
+          {...(card ? EXPAND : SLIDE)}
+          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Outlet />
+        </motion.div>
       </div>
       {!bare && <TabBar />}
     </>

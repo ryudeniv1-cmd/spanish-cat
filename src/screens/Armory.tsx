@@ -35,7 +35,8 @@ export function Armory() {
   const unlockedBladeCount = BLADES.filter((b) => learned >= b.threshold).length;
   const equippedId = store.meta.equipped_blade;
   const equippedChar = store.meta.equipped_character;
-  const webgl = webglAvailable();
+  // проверка создаёт WebGL-контекст — только один раз на монтирование
+  const webgl = useMemo(() => webglAvailable(), []);
 
   const progress = useMemo(
     () => ({ learned: store.learnedCount(), completedLevels: store.completedLevels() }),
@@ -64,6 +65,7 @@ export function Armory() {
       </div>
 
       <div className="seg" role="tablist" aria-label="Раздел Armory">
+        <span className={`seg__pill ${tab === 'crew' ? 'seg__pill--right' : ''}`} aria-hidden="true" />
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -77,13 +79,6 @@ export function Armory() {
               setTab(t.id);
             }}
           >
-            {tab === t.id && (
-              <motion.span
-                layoutId="seg-pill"
-                className="seg__pill"
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              />
-            )}
             <span className="seg__label">{t.label}</span>
           </button>
         ))}
