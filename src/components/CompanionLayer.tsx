@@ -8,6 +8,9 @@ import { useAppStore, useStoreVersion } from '../AppContext';
 import { CHARACTERS, clipUrls, isCharacterUnlocked } from '../data/characters';
 import { IdleVideo } from './CharacterMedia';
 
+/** Пауза между проигрываниями idle-ролика на Today. */
+const IDLE_HOLD_MS = 10_000;
+
 export function CompanionLayer() {
   const store = useAppStore();
   const version = useStoreVersion();
@@ -24,7 +27,12 @@ export function CompanionLayer() {
 
   return (
     <div className="companion-layer" aria-hidden="true">
-      <IdleVideo sources={clipUrls(companion)} className="companion-layer__video" standalone />
+      <IdleVideo
+        sources={clipUrls(companion)}
+        className="companion-layer__video"
+        standalone
+        holdMs={IDLE_HOLD_MS}
+      />
     </div>
   );
 }

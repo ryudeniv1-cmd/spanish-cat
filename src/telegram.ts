@@ -1,5 +1,6 @@
 // Обёртка над window.Telegram.WebApp: инициализация, безопасные зоны,
 // haptic, подтверждения, буфер обмена. Все вызовы защищены проверками версий.
+import { Sfx, sfx } from './audio';
 
 interface TgHaptic {
   impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
@@ -103,7 +104,20 @@ export function initTelegramUi(): void {
   }
 }
 
-export function haptic(kind: 'learned' | 'remembered' | 'forgot' | 'tap' | 'unlock'): void {
+/** Звук в пару к отдаче: одно нажатие — один отклик. */
+const HAPTIC_SFX: Record<string, Sfx> = {
+  tap: 'tap',
+  learned: 'success',
+  unlock: 'select',
+  remembered: 'soft',
+  forgot: 'low',
+};
+
+export function haptic(
+  kind: 'learned' | 'remembered' | 'forgot' | 'tap' | 'unlock',
+  sound: Sfx | false = HAPTIC_SFX[kind],
+): void {
+  if (sound) sfx(sound);
   const h = tg?.HapticFeedback;
   if (!h) return;
   try {

@@ -1,4 +1,5 @@
 // Центральное состояние приложения поверх слоя хранения.
+import { setSoundEnabled } from './audio';
 import { LEVELS, Level, LEVEL_BOUNDS } from './data/words';
 import type { StorageAdapter } from './storage/adapter';
 import { buildExport, validateExport, writeImport } from './storage/backup';
@@ -79,6 +80,7 @@ export class AppStore {
 
     this.statuses = parseStatuses(values['st_0'] ?? null, values['st_1'] ?? null);
     this.meta = parseMeta(values['meta'] ?? null);
+    setSoundEnabled(this.meta.sound_on);
 
     const write = (k: string, v: string | null) => this.queue.set(k, v);
     this.tr = new ChunkStore<string>('tr', packTr, TR_MAX_CHARS, write);
@@ -319,6 +321,13 @@ export class AppStore {
   /** Персонаж на экране Today; '' — убрать. */
   equipCharacter(id: string): void {
     this.meta.equipped_character = id;
+    this.persistMeta();
+    this.emit();
+  }
+
+  setSoundOn(on: boolean): void {
+    this.meta.sound_on = on;
+    setSoundEnabled(on);
     this.persistMeta();
     this.emit();
   }

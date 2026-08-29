@@ -99,7 +99,8 @@ export function Armory() {
                 transition={{ delay: i * 0.04, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => {
                   if (unlocked) {
-                    haptic('tap');
+                    // характерный звук включения светового меча
+                    haptic('tap', 'saber');
                     setView(b);
                   }
                 }}
@@ -138,7 +139,7 @@ export function Armory() {
                 transition={{ delay: i * 0.04, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => {
                   if (!unlocked) return;
-                  haptic('tap');
+                  haptic('tap', 'select');
                   setCrewView(c);
                 }}
               >

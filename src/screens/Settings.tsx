@@ -1,7 +1,7 @@
 // Settings: настройки, Telegram ID, занятость хранилища, экспорт / импорт.
 import { useEffect, useState } from 'react';
 import { useAppStore, useStoreVersion } from '../AppContext';
-import { copyText, showConfirm, telegramUserId } from '../telegram';
+import { copyText, haptic, showConfirm, telegramUserId } from '../telegram';
 import { Panel } from '../components/Panel';
 
 const CAPACITY = 1024 * 4096;
@@ -109,6 +109,22 @@ export function Settings() {
             value={store.meta.min_sentences}
             onChange={(e) => store.setSettings({ min_sentences: Number(e.target.value) })}
           />
+        </div>
+        <div className="setting-row">
+          <label htmlFor="snd">Звуки интерфейса</label>
+          <button
+            id="snd"
+            type="button"
+            className={`btn btn--sm ${store.meta.sound_on ? 'btn--ghost' : 'btn--ghost-dim'}`}
+            aria-pressed={store.meta.sound_on}
+            onClick={() => {
+              const on = !store.meta.sound_on;
+              store.setSoundOn(on);
+              if (on) haptic('tap');
+            }}
+          >
+            {store.meta.sound_on ? 'Включены' : 'Выключены'}
+          </button>
         </div>
       </Panel>
 

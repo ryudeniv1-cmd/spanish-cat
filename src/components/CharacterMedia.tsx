@@ -76,12 +76,15 @@ export function IdleVideo({
   className,
   label,
   standalone,
+  holdMs,
 }: {
   sources: string[];
   className?: string;
   label?: string;
   /** вне сетки (полноэкранный просмотр, Today) — играет всегда, мимо пула */
   standalone?: boolean;
+  /** пауза между проигрываниями вместо непрерывного цикла */
+  holdMs?: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const reduced = useReducedMotion();
@@ -113,6 +116,7 @@ export function IdleVideo({
       return;
     }
 
+
     const obs = observer();
     obs.observe(v);
     return () => {
@@ -120,6 +124,25 @@ export function IdleVideo({
       drop(v);
     };
   }, [reduced, standalone]);
+
+  // Пауза между проигрываниями: ролик доигрывает, замирает на последнем
+  // кадре на holdMs и запускается снова.
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || !holdMs || reduced) return;
+    let timer = 0;
+    const onEnded = () => {
+      timer = window.setTimeout(() => {
+        v.currentTime = 0;
+        void v.play().catch(() => undefined);
+      }, holdMs);
+    };
+    v.addEventListener('ended', onEnded);
+    return () => {
+      v.removeEventListener('ended', onEnded);
+      if (timer) clearTimeout(timer);
+    };
+  }, [holdMs, reduced]);
 
   if (!src) return null;
 
@@ -129,7 +152,7 @@ export function IdleVideo({
       className={className ?? 'char-video'}
       src={src}
       autoPlay={!reduced && standalone}
-      loop
+      loop={!holdMs}
       muted
       playsInline
       preload="metadata"

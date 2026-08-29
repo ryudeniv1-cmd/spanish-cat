@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { haptic } from '../telegram';
 
 const tabs = [
   {
@@ -65,7 +66,7 @@ export function TabBar() {
   return (
     <nav className="tabbar">
       {tabs.map((t) => (
-        <NavLink key={t.to} to={t.to} end={t.to === '/'}>
+        <NavLink key={t.to} to={t.to} end={t.to === '/'} onClick={() => haptic('tap', 'nav')}>
           {t.icon}
           <span>{t.label}</span>
         </NavLink>

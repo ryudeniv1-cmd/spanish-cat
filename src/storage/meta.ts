@@ -8,6 +8,7 @@ export interface MetaData {
   sentences_total: number; // всего написанных примеров (испанских предложений)
   equipped_blade: string; // id экипированного клинка ('' — ещё нет)
   equipped_character: string; // id персонажа на экране Today ('' — не выбран)
+  sound_on: boolean; // звуки интерфейса
   blades_seen: number; // сколько порогов клинков уже показано сценой открытия
 }
 
@@ -19,6 +20,7 @@ export const DEFAULT_META: MetaData = {
   sentences_total: 0,
   equipped_blade: '',
   equipped_character: '',
+  sound_on: true,
   blades_seen: 0,
 };
 
@@ -34,6 +36,7 @@ export function parseMeta(raw: string | null): MetaData {
       sentences_total: Math.max(0, Number(m.sentences_total ?? 0) || 0),
       equipped_blade: typeof m.equipped_blade === 'string' ? m.equipped_blade : '',
       equipped_character: typeof m.equipped_character === 'string' ? m.equipped_character : '',
+      sound_on: m.sound_on !== false,
       blades_seen: Math.max(0, Number(m.blades_seen ?? 0) || 0),
     };
   } catch {
