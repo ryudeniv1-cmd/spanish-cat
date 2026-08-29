@@ -134,6 +134,10 @@ interface Spark {
   size: number;
 }
 
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 interface Props {
   blade: Blade | undefined;
   /** доля высоты, на которой «земля»: подошвы и низ рукояти */
@@ -163,6 +167,10 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const rings = makeRings();
+    // Поворот меча вокруг своей оси: сам по себе — оборот за 24 с, пальцем —
+    // сколько угодно, с инерцией. Силуэт цилиндра от поворота не меняется,
+    // поэтому вращение показывают детали на поверхности рукояти.
+    const spin = { a: 0, vel: 0, active: false, x: 0 };
     const particles: Particle[] = [];
     const sparks: Spark[] = [];
     let sparkDebt = 0;
@@ -205,14 +213,29 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       const core = parseRgb(b.core, WHITE);
       const dark = tier >= 11;
 
-      const total = h * 0.74;
-      const hiltH = total * 0.28 * (b.hilt.len / 1.1);
-      const bladeH = total * 0.72 * (b.bladeLen / 2.85);
-      const hw = Math.max(6, hiltH * 0.24 * (b.hilt.r / 0.09));
+      // Рукоять короткая и узкая, лезвие длинное и тонкое: меч читается
+      // как клинок, а не как брусок. Длина считается от свободного места
+      // до верха сцены, поэтому ни один из двенадцати не упирается в край.
+      const hiltH = h * 0.165 * (b.hilt.len / 1.1);
+      const hw = Math.max(5, hiltH * 0.26 * (b.hilt.r / 0.09));
       const hiltTop = groundY - hiltH;
       const bladeBottom = hiltTop + 2;
+      const room = bladeBottom - h * 0.05;
+      const bladeH = Math.max(20, room * (0.9 + 0.1 * clamp01((b.bladeLen - 2.6) / 0.4)));
       const bladeTop = bladeBottom - bladeH;
-      const bodyW = Math.max(2.2, hw * 0.3);
+      const bodyW = Math.max(1.8, hw * 0.24);
+
+      // угол поворота: инерция после броска пальцем + собственный оборот
+      if (!spin.active) {
+        spin.vel *= Math.pow(0.04, dt);
+        spin.a += spin.vel;
+      }
+      if (!reduced) spin.a += (Math.PI * 2 * dt) / 24;
+      const sinS = Math.sin(spin.a);
+      const cosS = Math.cos(spin.a);
+      /** Деталь на поверхности рукояти под углом phi: сдвиг от оси и «к зрителю ли». */
+      const surfX = (phi: number) => Math.sin(phi + spin.a);
+      const surfZ = (phi: number) => Math.cos(phi + spin.a);
 
       // нестабильность энергии: колебание 5..8 %, не мигание
       const flick = reduced ? 1 : 1 + 0.045 * Math.sin(t * 3.1) + 0.02 * Math.sin(t * 7.7 + 1.3);
@@ -273,8 +296,10 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
         rrect(ctx, cx - bodyW, bladeTop, bodyW * 2, bladeH, bodyW);
         ctx.fill();
         const cw = bodyW * 0.45;
+        // сердцевина ходит поперёк лезвия — по ней и видно, что меч повёрнут
+        const coreX = cx + sinS * (bodyW - cw) * 0.85;
         ctx.fillStyle = css(mix(core, WHITE, 0.5), 0.95);
-        rrect(ctx, cx - cw, bladeTop + 1, cw * 2, bladeH - 2, cw);
+        rrect(ctx, coreX - cw, bladeTop + 1, cw * 2, bladeH - 2, cw);
         ctx.fill();
       }
 
@@ -412,13 +437,16 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       // корпус
       seg(hiltTop, hiltH - pomH, hw * 0.52, hw * 0.22);
 
-      // продольные грани
-      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      // продольные грани: уходят за рукоять и возвращаются с другой стороны
       ctx.lineWidth = 1;
-      for (const fx of [-0.22, 0.1]) {
+      for (const phi of [-1.4, 0.6]) {
+        const z = surfZ(phi);
+        if (z <= 0.05) continue;
+        ctx.strokeStyle = `rgba(255,255,255,${(0.07 * z).toFixed(3)})`;
+        const x = cx + hw * 0.5 * surfX(phi);
         ctx.beginPath();
-        ctx.moveTo(cx + hw * fx, hiltTop + hiltH * 0.08);
-        ctx.lineTo(cx + hw * fx, groundY - pomH - hiltH * 0.05);
+        ctx.moveTo(x, hiltTop + hiltH * 0.08);
+        ctx.lineTo(x, groundY - pomH - hiltH * 0.05);
         ctx.stroke();
       }
 
@@ -443,12 +471,16 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
         ctx.fill();
       }
 
-      // вентиляционные прорези
-      ctx.fillStyle = '#05070c';
-      for (let i = 0; i < 3; i++) {
-        const y = hiltTop + hiltH * (0.58 + i * 0.07);
-        rrect(ctx, cx - hw * 0.3, y, hw * 0.6, Math.max(1, hiltH * 0.014), 1);
-        ctx.fill();
+      // вентиляционные прорези: сужаются к краю и прячутся за рукоятью
+      if (cosS > 0.05) {
+        const ventW = hw * 0.6 * cosS;
+        const ventX = cx + hw * 0.5 * sinS;
+        ctx.fillStyle = '#05070c';
+        for (let i = 0; i < 3; i++) {
+          const y = hiltTop + hiltH * (0.58 + i * 0.07);
+          rrect(ctx, ventX - ventW / 2, y, ventW, Math.max(1, hiltH * 0.014), 1);
+          ctx.fill();
+        }
       }
 
       // эмиссивная вставка-активатор
@@ -456,11 +488,17 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       ctx.globalCompositeOperation = 'lighter';
       const insY = hiltTop + hiltH * 0.3;
       const insH = hiltH * 0.09;
-      ctx.fillStyle = css(accent, 0.9);
-      rrect(ctx, cx - hw * 0.16, insY, hw * 0.32, insH, 1.5);
-      ctx.fill();
-      ctx.fillStyle = css(accent, 0.28);
-      rrect(ctx, cx - hw * 0.38, insY - insH * 0.5, hw * 0.76, insH * 2, 3);
+      // активатор — на одной стороне рукояти: уезжает за неё и появляется снова
+      const insVis = Math.max(0, cosS);
+      const insX = cx + hw * 0.5 * sinS;
+      if (insVis > 0.02) {
+        ctx.fillStyle = css(accent, 0.9 * insVis);
+        rrect(ctx, insX - hw * 0.16 * insVis, insY, hw * 0.32 * insVis, insH, 1.5);
+        ctx.fill();
+      }
+      // отсвет вставки виден и с обратной стороны — свет обходит рукоять
+      ctx.fillStyle = css(accent, 0.1 + 0.18 * insVis);
+      rrect(ctx, insX - hw * 0.38, insY - insH * 0.5, hw * 0.76, insH * 2, 3);
       ctx.fill();
       // отражение цвета клинка на верхней части рукояти
       const rg = ctx.createLinearGradient(0, hiltTop, 0, hiltTop + hiltH * 0.5);
@@ -477,7 +515,10 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       ctx.fill();
 
       // гарда у основания лезвия
-      const guardW = b.hilt.guard === 'flat' ? hw * 1.5 : b.hilt.guard === 'ring' ? hw * 1.25 : hw * 1.7;
+      // плоская и разведённая гарда — пластины: при повороте их видно с ребра
+      const plate = b.hilt.guard === 'ring' ? 1 : 0.4 + 0.6 * Math.abs(cosS);
+      const guardW =
+        (b.hilt.guard === 'flat' ? hw * 1.5 : b.hilt.guard === 'ring' ? hw * 1.25 : hw * 1.7) * plate;
       const guardH = hiltH * 0.07;
       ctx.fillStyle = '#333c55';
       rrect(ctx, cx - guardW / 2, hiltTop - guardH, guardW, guardH, 2);
@@ -657,6 +698,30 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       }
     };
 
+    // Меч крутится пальцем: горизонтальная протяжка через сцену — примерно
+    // оборот. preventDefault не зовём — вертикальная прокрутка экрана важнее,
+    // а когда браузер её перехватывает, приходит pointercancel.
+    const onDown = (e: PointerEvent) => {
+      spin.active = true;
+      spin.x = e.clientX;
+      spin.vel = 0;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!spin.active) return;
+      const dx = e.clientX - spin.x;
+      spin.x = e.clientX;
+      spin.a += dx * 0.02;
+      spin.vel = dx * 0.02;
+    };
+    const onUp = () => {
+      spin.active = false;
+    };
+    box.addEventListener('pointerdown', onDown);
+    box.addEventListener('pointermove', onMove);
+    box.addEventListener('pointerup', onUp);
+    box.addEventListener('pointercancel', onUp);
+    box.addEventListener('pointerleave', onUp);
+
     const ro = new ResizeObserver(resize);
     ro.observe(box);
     const io = new IntersectionObserver((e) => {
@@ -674,6 +739,11 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       ro.disconnect();
       io.disconnect();
       document.removeEventListener('visibilitychange', onVis);
+      box.removeEventListener('pointerdown', onDown);
+      box.removeEventListener('pointermove', onMove);
+      box.removeEventListener('pointerup', onUp);
+      box.removeEventListener('pointercancel', onUp);
+      box.removeEventListener('pointerleave', onUp);
     };
   }, [groundFrac]);
 
