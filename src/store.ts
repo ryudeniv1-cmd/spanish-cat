@@ -4,7 +4,6 @@ import { LEVELS, Level, LEVEL_BOUNDS } from './data/words';
 import type { StorageAdapter } from './storage/adapter';
 import { buildExport, validateExport, writeImport } from './storage/backup';
 import {
-  ExamplePair,
   SRS_MAX_CHARS,
   SrsRec,
   Status,
@@ -22,6 +21,13 @@ import {
   todayDay,
 } from './storage/codec';
 import { DEFAULT_META, MetaData, packMeta, parseMeta } from './storage/meta';
+import {
+  ExamplePair,
+  WordData,
+  WordExtras,
+  isEmptyWordData,
+  normalizeWordData,
+} from './storage/worddata';
 import { BucketStore, ChunkStore } from './storage/persist';
 import { SaveQueue, SaveStatus } from './storage/queue';
 import { computeRefill } from './logic/refill';
@@ -41,6 +47,8 @@ export class AppStore {
   statuses: Uint8Array = new Uint8Array(TOTAL_WORDS);
   meta: MetaData = { ...DEFAULT_META };
   ready = false;
+  /** Все корзины карточек подняты в память (см. loadAllCards). */
+  cardsLoaded = false;
   saveStatus: SaveStatus = 'saved';
   lastLearnedId: number | null = null;
   lastLearnedAt = 0;
@@ -225,27 +233,51 @@ export class AppStore {
     this.emit();
   }
 
-  /** Автосохранение карточки: перевод + примеры + счётчик предложений. */
-  async saveCard(id: number, translation: string, pairs: ExamplePair[]): Promise<void> {
+  /** Автосохранение карточки: перевод + примеры + дополнительные поля.
+      Что пусто — в хранилище не попадает: за этим следит normalizeWordData. */
+  async saveCard(
+    id: number,
+    translation: string,
+    pairs: ExamplePair[],
+    extras: WordExtras = {},
+  ): Promise<void> {
     const t = translation.trim();
     if (t) this.tr.set(id, t.slice(0, 300));
     else if (this.tr.has(id)) this.tr.delete(id);
 
-    // хвостовые пустые пары не храним
-    const trimmed = [...pairs];
-    while (trimmed.length > 0) {
-      const last = trimmed[trimmed.length - 1];
-      if (last[0].trim() === '' && last[1].trim() === '') trimmed.pop();
-      else break;
-    }
+    const data = normalizeWordData({ ...extras, e: pairs });
     const oldCount = (this.buckets.getCachedExamples(id) ?? []).filter((p) => p[0].trim()).length;
-    const newCount = trimmed.filter((p) => p[0].trim()).length;
-    await this.buckets.setExamples(id, trimmed);
+    const newCount = (data.e ?? []).filter((p) => p[0].trim()).length;
+    await this.buckets.setWord(id, data);
     if (newCount !== oldCount) {
       this.meta.sentences_total = Math.max(0, this.meta.sentences_total + newCount - oldCount);
       this.persistMeta();
     }
     this.emit();
+  }
+
+  /** Карточка из памяти: {} — не заполнена или корзина ещё не подгружена. */
+  wordData(id: number): WordData {
+    return this.buckets.getCachedWord(id) ?? {};
+  }
+
+  /**
+   * Подтягивает все корзины разом — нужно там, где данные карточек читаются
+   * скопом (фильтры и поиск Lexicon). Загрузка одна на сессию.
+   */
+  async loadAllCards(): Promise<void> {
+    if (this.cardsLoaded) return;
+    await this.buckets.loadAll();
+    this.cardsLoaded = true;
+    this.emit();
+  }
+
+  /** Карточки со всеми заполненными полями — для фильтров и поиска. */
+  *cardEntries(): IterableIterator<[number, WordData]> {
+    for (let id = 0; id < TOTAL_WORDS; id++) {
+      const d = this.buckets.getCachedWord(id);
+      if (d && !isEmptyWordData(d)) yield [id, d];
+    }
   }
 
   /** «Выучил»: статус review, первое повторение завтра. */
@@ -381,17 +413,13 @@ export class AppStore {
   async exportJson(): Promise<string> {
     await this.queue.flushNow();
     await this.buckets.loadAll();
-    const examples: [number, ExamplePair[]][] = [];
-    for (let id = 0; id < TOTAL_WORDS; id++) {
-      const pairs = this.buckets.getCachedExamples(id);
-      if (pairs && pairs.length > 0) examples.push([id, pairs]);
-    }
+    this.cardsLoaded = true;
     const data = buildExport(
       this.meta,
       this.statuses,
       this.tr.entries(),
       this.srsStore.entries(),
-      examples,
+      this.cardEntries(),
     );
     return JSON.stringify(data);
   }
@@ -401,6 +429,7 @@ export class AppStore {
     await this.queue.flushNow();
     await writeImport(this.adapter, data);
     this.ready = false;
+    this.cardsLoaded = false;
     this.emit();
     await this.init();
   }

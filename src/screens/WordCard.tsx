@@ -1,16 +1,22 @@
 // Карточка слова: перевод + 10 примеров, автосохранение, «Выучил» / «Уже знаю».
+// Ниже — необязательные поля в свёрнутых аккордеонах: на «Выучил», пороги
+// клинков и статистику они не влияют, обязательны по-прежнему только перевод
+// и минимум примеров.
 import { motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { POS_RU, WORDS } from '../data/words';
-import { ExamplePair, Status, dateFromDay } from '../storage/codec';
+import { Status, dateFromDay } from '../storage/codec';
+import { EXAMPLE_SLOTS, ExamplePair, WordExtras, extrasOf } from '../storage/worddata';
+import { openBlocks, setOpenBlocks } from '../logic/cardOpen';
+import { FIELD_BLOCKS, filledBlocks } from '../logic/wordfields';
 import { haptic, onTelegramBack, showConfirm } from '../telegram';
 import { LevelBadge, SaveIndicator, STATUS_RU } from '../components/badges';
 import { ExampleRing } from '../components/ExampleRing';
 import { Panel } from '../components/Panel';
+import { FieldsProgress, WordFields } from '../components/WordFields';
 
-const EXAMPLE_SLOTS = 10;
 const MAX_FIELD = 250;
 
 function padPairs(pairs: ExamplePair[]): ExamplePair[] {
@@ -36,18 +42,22 @@ export function WordCard() {
   const status = store.status(id);
   const [translation, setTranslation] = useState(() => store.translation(id));
   const [pairs, setPairs] = useState<ExamplePair[] | null>(null);
+  const [extras, setExtras] = useState<WordExtras>({});
+  const [open, setOpen] = useState<string[]>(() => openBlocks(id));
   const dirty = useRef(false);
-  const latest = useRef({ translation, pairs });
-  latest.current = { translation, pairs };
+  const latest = useRef({ translation, pairs, extras });
+  latest.current = { translation, pairs, extras };
 
   const goBack = useCallback(() => navigate(-1), [navigate]);
   useEffect(() => onTelegramBack(goBack), [goBack]);
 
-  // загрузка примеров (лениво из корзины)
+  // загрузка карточки (лениво из корзины)
   useEffect(() => {
     let alive = true;
-    void store.buckets.getExamples(id).then((p) => {
-      if (alive) setPairs(padPairs(p));
+    void store.buckets.getWord(id).then((d) => {
+      if (!alive) return;
+      setPairs(padPairs(d.e ?? []));
+      setExtras(extrasOf(d));
     });
     return () => {
       alive = false;
@@ -55,10 +65,10 @@ export function WordCard() {
   }, [store, id]);
 
   const save = useCallback(() => {
-    const { translation: t, pairs: p } = latest.current;
+    const { translation: t, pairs: p, extras: x } = latest.current;
     if (!dirty.current || p === null) return;
     dirty.current = false;
-    void store.saveCard(id, t, p);
+    void store.saveCard(id, t, p, x);
   }, [store, id]);
 
   // автосохранение с debounce ~700 мс
@@ -66,7 +76,7 @@ export function WordCard() {
     if (!dirty.current) return;
     const timer = setTimeout(save, 700);
     return () => clearTimeout(timer);
-  }, [translation, pairs, save]);
+  }, [translation, pairs, extras, save]);
 
   // уход с экрана — сохранить черновик немедленно
   useEffect(
@@ -133,6 +143,7 @@ export function WordCard() {
       >
         {word.word}
       </motion.div>
+      <FieldsProgress filled={filledBlocks(extras)} total={FIELD_BLOCKS.length} />
       <div className="card-meta">
         <LevelBadge level={word.level} />
         <span className="mono">ранг {word.rank}</span>
@@ -214,6 +225,24 @@ export function WordCard() {
           ))
         )}
       </Panel>
+
+      <WordFields
+        pos={word.pos}
+        value={extras}
+        open={open}
+        onPatch={(patch) => {
+          dirty.current = true;
+          setExtras((prev) => ({ ...prev, ...patch }));
+        }}
+        onToggle={(key) => {
+          haptic('tap');
+          setOpen((prev) => {
+            const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+            setOpenBlocks(id, next);
+            return next;
+          });
+        }}
+      />
 
       {status === Status.Learning && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>

@@ -1803,6 +1803,335 @@ button {
 }
 
 /* ============ reduced motion ============ */
+/* ============ дополнительные поля карточки ============ */
+
+/* Тонкая полоса наверху: сегмент на блок, заполненные светятся. Без цифр —
+   это ощущение полноты карточки, а не показатель, который надо выполнять. */
+.fields-progress {
+  display: flex;
+  gap: 3px;
+  margin: 2px 2px 12px;
+}
+
+.fields-progress span {
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.09);
+  transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+
+.fields-progress span.on {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* Все блоки — одной плитой, без зазоров между заголовками: десять отдельных
+   панелей превратили бы карточку в портянку. */
+.acc-list {
+  margin-bottom: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.acc + .acc {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.acc__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  text-align: left;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.acc__head--filled {
+  color: var(--text);
+}
+
+.acc--open .acc__head {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.acc__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease);
+}
+
+.acc__head--filled .acc__dot {
+  opacity: 1;
+}
+
+.acc__title {
+  flex: none;
+}
+
+/* Краткое содержимое прямо в заголовке: «Сочетания · 3». */
+.acc__sum {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acc__sum::before {
+  content: '· ';
+  color: var(--text2);
+}
+
+.acc__chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-left: auto;
+  color: var(--text2);
+  transition: transform 0.25s var(--ease);
+}
+
+.acc__sum + .acc__chev {
+  margin-left: 0;
+}
+
+.acc--open .acc__chev {
+  transform: rotate(180deg);
+}
+
+.acc__body {
+  padding: 4px 14px 14px;
+  animation: acc-open 0.22s var(--ease);
+}
+
+@keyframes acc-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.acc-field + .acc-field,
+.acc-field + .list-row,
+.acc__body > .list-row + .list-row {
+  margin-top: 10px;
+}
+
+.acc-field .field-label {
+  text-transform: none;
+}
+
+/* Сегментированный переключатель (род существительного) — одно касание. */
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(8, 12, 24, 0.6);
+}
+
+.segmented__btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 6px;
+  border-radius: 10px;
+  transition: all 0.2s var(--ease);
+}
+
+.segmented__btn.active {
+  background: var(--accent);
+  color: #071018;
+  box-shadow: 0 0 14px var(--accent-glow);
+}
+
+.chips--wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+/* Строка списка: поле (или два) плюс крестик. */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.list-row .input {
+  padding: 9px 11px;
+  font-size: 14px;
+}
+
+.list-row__n {
+  width: 14px;
+  flex: none;
+  text-align: right;
+  font-size: 11px;
+}
+
+.row-x {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 8px;
+  transition: color 0.2s var(--ease);
+}
+
+.row-x:active {
+  color: var(--danger);
+}
+
+.add-btn {
+  margin-top: 8px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mini-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mini-field .input {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+/* ============ поля карточки на повторении ============ */
+
+.fields-view {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fv-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.fv-label {
+  width: 88px;
+  flex: none;
+  text-align: right;
+  font-size: 10px;
+}
+
+.fv-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.fv-value .es {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.fv-dim {
+  color: var(--text2);
+}
+
+.fv-warn {
+  color: var(--warm);
+  font-weight: 600;
+}
+
+.fv-num {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.fv-forms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.fv-forms i {
+  font-style: normal;
+  font-size: 10px;
+}
+
+.fv-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.fv-tags span {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.fv-note {
+  white-space: pre-wrap;
+  color: var(--text2);
+}
+
+/* Метка «ложный друг» в списке слов. */
+.ff-ic {
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  vertical-align: -1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glass--active,
   .sheen::after,
@@ -1826,5 +2155,8 @@ button {
   }
   .review-card {
     transition: none;
+  }
+  .acc__body {
+    animation: none;
   }
 }

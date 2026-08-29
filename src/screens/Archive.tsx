@@ -1,13 +1,17 @@
 // Lexicon: 5000 слов, виртуализация, поиск, фильтры-чипы, галочка «Знаю»,
 // «+ Учить», групповые действия. Статусы — иконками, перевод под словом.
+// Фильтры по теме и регистру появляются, только когда такие данные есть;
+// поиск заглядывает ещё в сочетания и однокоренные.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { VariableSizeList as List, ListChildComponentProps, ListOnItemsRenderedProps } from 'react-window';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { LEVELS, Level, WORDS } from '../data/words';
 import { Status, StatusValue } from '../storage/codec';
+import { Register } from '../storage/worddata';
+import { REGISTER_LABEL, cardSearchText } from '../logic/wordfields';
 import { haptic, showConfirm } from '../telegram';
-import { StatusIcon } from '../components/badges';
+import { FalseFriendIcon, StatusIcon } from '../components/badges';
 
 const HEADER_H = 54;
 const ROW_H = 56;
@@ -44,12 +48,26 @@ export function Archive() {
   const [query, setQuery] = useState('');
   const [levelFilter, setLevelFilter] = useState<Level | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusValue | null>(null);
+  const [themeFilter, setThemeFilter] = useState<string | null>(null);
+  const [registerFilter, setRegisterFilter] = useState<Register | null>(null);
   const [listHeight, setListHeight] = useState(400);
   const [stickyLevel, setStickyLevel] = useState<Level | null>(null);
   const [scrollLevel, setScrollLevel] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<List>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // темы и регистры показываем только те, что реально заполнены
+  const { themes, hasRegisters } = useMemo(() => {
+    const set = new Set<string>();
+    let hasRegisters = false;
+    for (const [, d] of store.cardEntries()) {
+      for (const t of d.th ?? []) set.add(t);
+      if (d.rg) hasRegisters = true;
+    }
+    return { themes: [...set].sort((a, b) => a.localeCompare(b, 'ru')), hasRegisters };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, store]);
 
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
@@ -62,10 +80,18 @@ export function Archive() {
       for (let id = from; id < to; id++) {
         const st = store.status(id);
         if (statusFilter !== null && st !== statusFilter) continue;
+        const card = themeFilter || registerFilter || q ? store.wordData(id) : null;
+        if (themeFilter && !(card!.th ?? []).includes(themeFilter)) continue;
+        if (registerFilter && card!.rg !== registerFilter) continue;
         if (q) {
           const w = WORDS[id].word.toLowerCase();
           const tr = store.translation(id).toLowerCase();
-          if (!stripAccents(w).includes(qPlain) && !tr.includes(q)) continue;
+          if (
+            !stripAccents(w).includes(qPlain) &&
+            !tr.includes(q) &&
+            !cardSearchText(card!).includes(q)
+          )
+            continue;
         }
         wordsRows.push({ type: 'word', id });
       }
@@ -75,7 +101,13 @@ export function Archive() {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, levelFilter, statusFilter, version, store]);
+  }, [query, levelFilter, statusFilter, themeFilter, registerFilter, version, store]);
+
+  // фильтры и поиск смотрят во все карточки — поднимаем корзины разом,
+  // один раз за сессию
+  useEffect(() => {
+    void store.loadAllCards();
+  }, [store]);
 
   useEffect(() => {
     listRef.current?.resetAfterIndex(0);
@@ -180,7 +212,10 @@ export function Archive() {
       >
         <StatusIcon status={st} />
         <span className="word-row__main">
-          <span className="es-word">{w.word}</span>
+          <span className="es-word">
+            {w.word}
+            {store.wordData(id).ff && <FalseFriendIcon />}
+          </span>
           {tr && <span className="tr">{tr}</span>}
         </span>
         {st === Status.New && (
@@ -242,7 +277,7 @@ export function Archive() {
         <input
           className="input"
           type="search"
-          placeholder="Поиск: слово или перевод…"
+          placeholder="Поиск: слово, перевод, сочетания…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -270,6 +305,34 @@ export function Archive() {
             </button>
           ))}
         </div>
+        {themes.length > 0 && (
+          <div className="chips">
+            {themes.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`chip ${themeFilter === t ? 'active' : ''}`}
+                onClick={() => setThemeFilter(themeFilter === t ? null : t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+        {hasRegisters && (
+          <div className="chips">
+            {(Object.keys(REGISTER_LABEL) as Register[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                className={`chip ${registerFilter === r ? 'active' : ''}`}
+                onClick={() => setRegisterFilter(registerFilter === r ? null : r)}
+              >
+                {REGISTER_LABEL[r]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }} className="archive-list">

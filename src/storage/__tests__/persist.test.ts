@@ -141,4 +141,39 @@ describe('BucketStore', () => {
     expect(store.ix[5]).toBeNull();
     expect(await store.getExamples(5)).toEqual([]);
   });
+
+  it('слово только с дополнительными полями хранится и без примеров', async () => {
+    const { queue, store, adapter } = make();
+    await store.setWord(7, { th: ['еда'], ff: 1, fn: 'ложный друг' });
+    await queue.flushNow();
+    const store2 = new BucketStore(adapter, () => {});
+    store2.loadIx(parseIx([
+      (await adapter.getItem('ix_0'))!,
+      await adapter.getItem('ix_1'),
+      await adapter.getItem('ix_2'),
+    ]));
+    expect(await store2.getWord(7)).toEqual({ th: ['еда'], ff: 1, fn: 'ложный друг' });
+    expect(await store2.getExamples(7)).toEqual([]);
+  });
+
+  it('карточка, у которой всё стёрли, уходит из корзины целиком', async () => {
+    const { queue, store } = make();
+    await store.setWord(9, { e: [['x', 'у']], nt: 'заметка' });
+    await store.setWord(9, { e: [['', '']], nt: '   ' });
+    await queue.flushNow();
+    expect(store.ix[9]).toBeNull();
+    expect(await store.getWord(9)).toEqual({});
+  });
+
+  it('setExamples не трогает остальные поля карточки', async () => {
+    const { queue, store } = make();
+    await store.setWord(3, { th: ['дом'], nt: 'мнемоника' });
+    await store.setExamples(3, [['Hola.', 'Привет.']]);
+    await queue.flushNow();
+    expect(await store.getWord(3)).toEqual({
+      e: [['Hola.', 'Привет.']],
+      th: ['дом'],
+      nt: 'мнемоника',
+    });
+  });
 });

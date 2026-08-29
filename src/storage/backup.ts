@@ -5,7 +5,6 @@ import type { StorageAdapter } from './adapter';
 import {
   BUCKET_MAX_CHARS,
   Bucket,
-  ExamplePair,
   SRS_MAX_CHARS,
   SrsRec,
   STATUS_CHARS,
@@ -19,6 +18,14 @@ import {
   parseStatuses,
 } from './codec';
 import { DEFAULT_META, MetaData, packMeta } from './meta';
+import {
+  ExamplePair,
+  WordData,
+  WordExtras,
+  extrasOf,
+  isEmptyWordData,
+  normalizeWordData,
+} from './worddata';
 
 export interface ExportData {
   app: 'spanish-miniapp';
@@ -29,6 +36,10 @@ export interface ExportData {
   translations: Record<string, string>;
   srs: Record<string, SrsRec>;
   examples: Record<string, ExamplePair[]>;
+  /** Дополнительные поля карточек. Появилось позже примеров и потому лежит
+      отдельным разделом: экспорт прошлых версий читается без него, а экспорт
+      этой версии — прошлыми версиями (они просто не увидят полей). */
+  fields?: Record<string, WordExtras>;
 }
 
 export function buildExport(
@@ -36,7 +47,7 @@ export function buildExport(
   statuses: Uint8Array,
   translations: Iterable<[number, string]>,
   srs: Iterable<[number, SrsRec]>,
-  examples: Iterable<[number, ExamplePair[]]>,
+  words: Iterable<[number, WordData]>,
 ): ExportData {
   const [a, b] = packStatuses(statuses);
   const tr: Record<string, string> = {};
@@ -44,8 +55,16 @@ export function buildExport(
   const sr: Record<string, SrsRec> = {};
   for (const [id, r] of srs) sr[id] = r;
   const ex: Record<string, ExamplePair[]> = {};
-  for (const [id, pairs] of examples) if (pairs.length > 0) ex[id] = pairs;
-  return {
+  const fields: Record<string, WordExtras> = {};
+  for (const [id, raw] of words) {
+    // нормализация здесь же: в экспорт не должно попасть пустое поле,
+    // даже если такое каким-то образом осталось в хранилище
+    const data = normalizeWordData(raw);
+    if (data.e && data.e.length > 0) ex[id] = data.e;
+    const extras = extrasOf(data);
+    if (!isEmptyWordData(extras)) fields[id] = extras;
+  }
+  const out: ExportData = {
     app: 'spanish-miniapp',
     version: 1,
     exported_at: new Date().toISOString(),
@@ -55,6 +74,8 @@ export function buildExport(
     srs: sr,
     examples: ex,
   };
+  if (Object.keys(fields).length > 0) out.fields = fields;
+  return out;
 }
 
 export function validateExport(x: unknown): ExportData {
@@ -75,6 +96,7 @@ export function validateExport(x: unknown): ExportData {
     translations: (d.translations as Record<string, string>) ?? {},
     srs: (d.srs as Record<string, SrsRec>) ?? {},
     examples: (d.examples as Record<string, ExamplePair[]>) ?? {},
+    fields: (d.fields as Record<string, WordExtras>) ?? {},
   };
 }
 
@@ -97,10 +119,22 @@ export function buildStorageEntries(data: ExportData): [string, string][] {
   const [a, b] = packStatuses(statuses);
   out.push(['st_0', a], ['st_1', b]);
 
+  // карточки: примеры и дополнительные поля снова вместе
+  const cards = new Map<number, WordData>();
+  for (const id of ids(data.examples)) {
+    const card = normalizeWordData({ ...(data.fields?.[id] ?? {}), e: data.examples[id] });
+    if (!isEmptyWordData(card)) cards.set(id, card);
+  }
+  for (const id of ids(data.fields ?? {})) {
+    if (cards.has(id)) continue;
+    const card = normalizeWordData(data.fields![id]);
+    if (!isEmptyWordData(card)) cards.set(id, card);
+  }
+  const cardIds = [...cards.keys()].sort((x, y) => x - y);
+
   // пересчитать счётчик предложений по факту
   let sentences = 0;
-  const exIds = ids(data.examples);
-  for (const id of exIds) sentences += data.examples[id].filter((p) => p[0]?.trim()).length;
+  for (const id of cardIds) sentences += (cards.get(id)!.e ?? []).filter((p) => p[0].trim()).length;
   const meta: MetaData = { ...data.meta, sentences_total: sentences };
   out.push(['meta', packMeta(meta)]);
 
@@ -140,7 +174,7 @@ export function buildStorageEntries(data: ExportData): [string, string][] {
   }
   flushSrs();
 
-  // примеры — жадная упаковка корзин со сжатием
+  // карточки — жадная упаковка корзин со сжатием
   const ix: (number | null)[] = new Array(TOTAL_WORDS).fill(null);
   let bucket: Bucket = {};
   let bucketIds: number[] = [];
@@ -153,14 +187,13 @@ export function buildStorageEntries(data: ExportData): [string, string][] {
     bucket = {};
     bucketIds = [];
   };
-  for (const id of exIds) {
-    const pairs = data.examples[id];
-    if (!pairs || pairs.length === 0) continue;
-    bucket[id] = pairs;
+  for (const id of cardIds) {
+    const card = cards.get(id)!;
+    bucket[id] = card;
     if (compressBucket(bucket).length > BUCKET_MAX_CHARS && bucketIds.length > 0) {
       delete bucket[id];
       flushBucket();
-      bucket[id] = pairs;
+      bucket[id] = card;
     }
     bucketIds.push(id);
   }

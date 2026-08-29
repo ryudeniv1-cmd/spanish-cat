@@ -1,5 +1,10 @@
 // Упаковка данных пользователя в схему ключей CloudStorage (ТЗ, раздел 8).
 import { compressToUTF16, decompressFromUTF16 } from 'lz-string';
+import { ExamplePair, WordData, fromStored, isEmptyWordData, toStored } from './worddata';
+
+// Тип примера объявлен вместе с остальной карточкой, но исторически
+// импортируется отсюда — оставляем реэкспорт.
+export type { ExamplePair, WordData };
 
 export const TOTAL_WORDS = 5000;
 
@@ -122,22 +127,35 @@ export function parseIx(chunks: (string | null)[]): (number | null)[] {
   return ix;
 }
 
-// --- корзины примеров: {id: [[es, ru], ...]} со сжатием lz-string ---
+// --- корзины карточек: {id: карточка} со сжатием lz-string ---
+// Карточка — примеры и дополнительные поля (src/storage/worddata.ts).
+// Старые корзины хранят на месте карточки голый массив примеров; чтение
+// и запись это учитывают, поэтому существующие данные читаются как есть.
 export const BUCKET_MAX_CHARS = 3600;
 
-export type ExamplePair = [string, string];
-export type Bucket = Record<number, ExamplePair[]>;
+export type Bucket = Record<number, WordData>;
 
 export function compressBucket(b: Bucket): string {
-  return compressToUTF16(JSON.stringify(b));
+  const plain: Record<number, WordData | ExamplePair[]> = {};
+  for (const [key, data] of Object.entries(b)) {
+    const stored = toStored(data);
+    if (stored !== null) plain[Number(key)] = stored;
+  }
+  return compressToUTF16(JSON.stringify(plain));
 }
 
 export function decompressBucket(s: string): Bucket {
   try {
     const json = decompressFromUTF16(s);
     if (!json) return {};
-    const parsed = JSON.parse(json) as Bucket;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Bucket = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const data = fromStored(value);
+      if (!isEmptyWordData(data)) out[Number(key)] = data;
+    }
+    return out;
   } catch {
     return {};
   }

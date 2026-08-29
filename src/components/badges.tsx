@@ -51,6 +51,23 @@ export function StatusIcon({ status }: { status: StatusValue }) {
   }
 }
 
+/** Метка «ложный друг» в списке Lexicon. */
+export function FalseFriendIcon() {
+  return (
+    <svg className="ff-ic" viewBox="0 0 16 16" aria-label="Ложный друг">
+      <path
+        d="M8 2.4 14.4 13.6H1.6z"
+        fill="none"
+        stroke="var(--warm)"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M8 6.4v3.1" stroke="var(--warm)" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="11.5" r="0.85" fill="var(--warm)" />
+    </svg>
+  );
+}
+
 export function SaveIndicator({ status }: { status: SaveStatus }) {
   const text = status === 'saving' ? 'сохраняю…' : status === 'error' ? 'ошибка записи' : 'сохранено';
   return <span className={`save-indicator save-indicator--${status}`}>{text}</span>;

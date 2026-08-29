@@ -1,14 +1,14 @@
-// Раскладка данных по ключам: чанки переводов/повторений и корзины примеров.
+// Раскладка данных по ключам: чанки переводов/повторений и корзины карточек.
 import type { StorageAdapter } from './adapter';
 import {
   BUCKET_MAX_CHARS,
   Bucket,
-  ExamplePair,
   IX_CHUNK_WORDS,
   compressBucket,
   decompressBucket,
   packIx,
 } from './codec';
+import { ExamplePair, WordData, isEmptyWordData, normalizeWordData } from './worddata';
 
 export type WriteFn = (key: string, value: string | null) => void;
 
@@ -121,7 +121,7 @@ export class ChunkStore<V> {
   }
 }
 
-/** Корзины примеров d_* с ленивой загрузкой и индексом ix_*. */
+/** Корзины карточек d_* с ленивой загрузкой и индексом ix_*. */
 export class BucketStore {
   ix: (number | null)[];
   private cache = new Map<number, Bucket>();
@@ -155,17 +155,28 @@ export class BucketStore {
     return b;
   }
 
-  async getExamples(id: number): Promise<ExamplePair[]> {
+  /** Карточка целиком: примеры и дополнительные поля. */
+  async getWord(id: number): Promise<WordData> {
     const n = this.ix[id];
-    if (n === null || n === undefined) return [];
+    if (n === null || n === undefined) return {};
     const b = await this.ensureBucket(n);
-    return b[id] ?? [];
+    return b[id] ?? {};
+  }
+
+  /** Карточка из памяти; undefined — корзина ещё не загружена. */
+  getCachedWord(id: number): WordData | undefined {
+    const n = this.ix[id];
+    if (n === null || n === undefined) return {};
+    return this.cache.get(n)?.[id] ?? (this.cache.has(n) ? {} : undefined);
+  }
+
+  async getExamples(id: number): Promise<ExamplePair[]> {
+    return (await this.getWord(id)).e ?? [];
   }
 
   getCachedExamples(id: number): ExamplePair[] | undefined {
-    const n = this.ix[id];
-    if (n === null || n === undefined) return [];
-    return this.cache.get(n)?.[id];
+    const d = this.getCachedWord(id);
+    return d === undefined ? undefined : (d.e ?? []);
   }
 
   async loadAll(): Promise<void> {
@@ -178,9 +189,11 @@ export class BucketStore {
     }
   }
 
-  async setExamples(id: number, pairs: ExamplePair[]): Promise<void> {
+  /** Запись карточки. Пустая карточка не хранится — слово уходит из корзины. */
+  async setWord(id: number, data: WordData): Promise<void> {
+    const value = normalizeWordData(data);
     const cur = this.ix[id];
-    if (pairs.length === 0) {
+    if (isEmptyWordData(value)) {
       if (cur === null || cur === undefined) return;
       const b = await this.ensureBucket(cur);
       delete b[id];
@@ -190,7 +203,7 @@ export class BucketStore {
     }
     if (cur !== null && cur !== undefined) {
       const b = await this.ensureBucket(cur);
-      b[id] = pairs;
+      b[id] = value;
       const packed = compressBucket(b);
       if (packed.length <= BUCKET_MAX_CHARS || Object.keys(b).length === 1) {
         this.write(`d_${cur}`, packed);
@@ -200,15 +213,20 @@ export class BucketStore {
       delete b[id];
       this.writeBucket(cur, b);
     }
-    await this.place(id, pairs);
+    await this.place(id, value);
   }
 
-  private async place(id: number, pairs: ExamplePair[]): Promise<void> {
+  async setExamples(id: number, pairs: ExamplePair[]): Promise<void> {
+    const cur = await this.getWord(id);
+    await this.setWord(id, { ...cur, e: pairs });
+  }
+
+  private async place(id: number, value: WordData): Promise<void> {
     const last = this.nextBucket - 1;
     if (last >= 0) {
       const b = await this.ensureBucket(last);
       if (Object.keys(b).length > 0) {
-        b[id] = pairs;
+        b[id] = value;
         const packed = compressBucket(b);
         if (packed.length <= BUCKET_MAX_CHARS) {
           this.write(`d_${last}`, packed);
@@ -219,7 +237,7 @@ export class BucketStore {
       }
     }
     const n = this.nextBucket++;
-    const b: Bucket = { [id]: pairs };
+    const b: Bucket = { [id]: value };
     this.cache.set(n, b);
     this.write(`d_${n}`, compressBucket(b));
     this.setIx(id, n);

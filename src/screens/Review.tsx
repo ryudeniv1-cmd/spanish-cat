@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../AppContext';
 import { WORDS } from '../data/words';
-import { ExamplePair } from '../storage/codec';
+import { WordData } from '../storage/worddata';
 import { haptic, onTelegramBack } from '../telegram';
 import { LevelBadge } from '../components/badges';
 import { Panel } from '../components/Panel';
+import { WordFieldsView } from '../components/WordFieldsView';
 import { warpStarfield } from '../components/Background';
 
 export function Review() {
@@ -21,7 +22,7 @@ export function Review() {
   const [revealed, setRevealed] = useState(false);
   const [flip, setFlip] = useState<'none' | 'out' | 'in'>('none');
   const [input, setInput] = useState('');
-  const [examples, setExamples] = useState<ExamplePair[] | null>(null);
+  const [card, setCard] = useState<WordData | null>(null);
   const [anim, setAnim] = useState('');
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -37,8 +38,7 @@ export function Review() {
   const reveal = async () => {
     if (current === undefined) return;
     haptic('tap');
-    const pairs = await store.buckets.getExamples(current);
-    setExamples(pairs.filter((p) => p[0].trim()));
+    setCard(await store.buckets.getWord(current));
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) {
       setRevealed(true);
@@ -63,7 +63,7 @@ export function Review() {
     setRevealed(false);
     setFlip('none');
     setInput('');
-    setExamples(null);
+    setCard(null);
   };
 
   const onRemembered = () => {
@@ -109,6 +109,8 @@ export function Review() {
       </div>
     );
   }
+
+  const examples = (card?.e ?? []).filter((p) => p[0].trim());
 
   const match =
     input.trim().length > 0 && word
@@ -173,7 +175,7 @@ export function Review() {
                 <div className="review-translation" style={{ fontSize: 18, margin: '0 0 14px' }}>
                   {translation}
                 </div>
-                {examples && examples.length > 0 ? (
+                {examples.length > 0 ? (
                   examples.map((p, i) => (
                     <div key={i} className="review-example">
                       <div className="es">{p[0]}</div>
@@ -183,6 +185,8 @@ export function Review() {
                 ) : (
                   <div className="empty-note">Примеров нет</div>
                 )}
+                {/* дополнительные поля — только заполненные */}
+                {card && <WordFieldsView data={card} pos={word!.pos} />}
                 <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
                   <button type="button" className="btn btn--amber" style={{ flex: 1 }} onClick={onForgot}>
                     Не вспомнил
