@@ -6,6 +6,8 @@ export interface MetaData {
   min_sentences: number; // «Минимум примеров для „Выучил“», 0–10
   last_refill_date: string; // YYYY-MM-DD последнего пополнения очереди
   sentences_total: number; // всего написанных примеров (испанских предложений)
+  equipped_blade: string; // id экипированного клинка ('' — ещё нет)
+  blades_seen: number; // сколько порогов клинков уже показано сценой открытия
 }
 
 export const DEFAULT_META: MetaData = {
@@ -14,6 +16,8 @@ export const DEFAULT_META: MetaData = {
   min_sentences: 10,
   last_refill_date: '',
   sentences_total: 0,
+  equipped_blade: '',
+  blades_seen: 0,
 };
 
 export function parseMeta(raw: string | null): MetaData {
@@ -26,6 +30,8 @@ export function parseMeta(raw: string | null): MetaData {
       min_sentences: clamp(Number(m.min_sentences ?? 10), 0, 10),
       last_refill_date: typeof m.last_refill_date === 'string' ? m.last_refill_date : '',
       sentences_total: Math.max(0, Number(m.sentences_total ?? 0) || 0),
+      equipped_blade: typeof m.equipped_blade === 'string' ? m.equipped_blade : '',
+      blades_seen: Math.max(0, Number(m.blades_seen ?? 0) || 0),
     };
   } catch {
     return { ...DEFAULT_META };

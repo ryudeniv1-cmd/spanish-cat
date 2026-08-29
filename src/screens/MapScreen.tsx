@@ -1,4 +1,5 @@
-// «Карта»: карта галактики + статистика по уровням + график за 30 дней.
+// Galaxy: карта галактики + прогресс по уровням + график за 30 дней.
+import { motion } from 'framer-motion';
 import { useCallback, useState } from 'react';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { WORDS } from '../data/words';
@@ -32,7 +33,7 @@ export function MapScreen() {
 
   return (
     <div>
-      <h1 className="screen-title">Карта галактики</h1>
+      <h1 className="screen-title">Galaxy</h1>
 
       <div style={{ position: 'relative', marginBottom: 14 }}>
         <GalaxyCanvas
@@ -52,36 +53,49 @@ export function MapScreen() {
           >
             <div className="es-word">{WORDS[tip.id].word}</div>
             <div className="mono">
-              {WORDS[tip.id].level} · ранг {WORDS[tip.id].rank} ·{' '}
-              {STATUS_RU[store.status(tip.id)]}
+              {WORDS[tip.id].level} · №{WORDS[tip.id].rank} · {STATUS_RU[store.status(tip.id)]}
             </div>
           </div>
         )}
       </div>
 
-      <Panel title="Сектора">
+      <Panel title="Сектора" order={0}>
         {stats.map((s) => {
-          const left = s.total - s.known - s.learned;
           const pct = Math.round(((s.known + s.learned) / s.total) * 100);
           return (
-            <div key={s.level} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div key={s.level} className="sector-row">
+              <div className="sector-row__head">
                 <LevelBadge level={s.level} />
-                <span className="mono">
-                  Знаю {s.known} · Выучил {s.learned} · Осталось {left} из {s.total} ({pct} %)
+                <span className="mono sector-row__count">
+                  {s.known + s.learned} / {s.total}
                 </span>
+                <span className="mono sector-row__pct">{pct} %</span>
               </div>
               <div className="stat-bar">
                 <div style={{ width: `${(s.known / s.total) * 100}%`, background: 'var(--st-known)' }} />
-                <div style={{ width: `${(s.learned / s.total) * 100}%`, background: 'var(--st-review)' }} />
-                <div style={{ width: `${(s.learning / s.total) * 100}%`, background: 'var(--st-learning)' }} />
+                <div style={{ width: `${(s.learned / s.total) * 100}%`, background: 'var(--accent)' }} />
+                <div style={{ width: `${(s.learning / s.total) * 100}%`, background: 'var(--warm)' }} />
               </div>
             </div>
           );
         })}
+        <div className="sector-legend">
+          <span>
+            <i style={{ background: 'var(--st-known)' }} />
+            знаю
+          </span>
+          <span>
+            <i style={{ background: 'var(--accent)' }} />
+            выучено
+          </span>
+          <span>
+            <i style={{ background: 'var(--warm)' }} />
+            учу
+          </span>
+        </div>
       </Panel>
 
-      <Panel title="Показания">
+      <Panel title="Показания" tone="dim" order={1}>
         <div className="stat-numbers">
           <div className="stat-cell">
             <div className="num">{learnedTotal}</div>
@@ -96,18 +110,21 @@ export function MapScreen() {
             <div className="mono">на повторении</div>
           </div>
           <div className="stat-cell">
-            <div className="num num--amber">{store.meta.sentences_total}</div>
+            <div className="num num--warm">{store.meta.sentences_total}</div>
             <div className="mono">предложений всего</div>
           </div>
         </div>
       </Panel>
 
-      <Panel title="Выучено за 30 дней" aside={<span className="mono">слов/день</span>}>
+      <Panel title="Выучено за 30 дней" tone="dim" order={2} aside={<span className="mono">слов/день</span>}>
         <div className="chart30">
           {chart.map((n, i) => (
-            <div
+            <motion.div
               key={i}
               className={`col ${n === 0 ? 'col--zero' : ''}`}
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: 1 }}
+              transition={{ delay: i * 0.018, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
               style={{ height: `${Math.max(3, (n / chartMax) * 100)}%` }}
               title={`${n}`}
             />

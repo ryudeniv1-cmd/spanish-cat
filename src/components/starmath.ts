@@ -41,14 +41,31 @@ for (let id = 0; id < TOTAL_WORDS; id++) {
   STRIP_Y[id] = 0.1 + rng() * 0.8;
 }
 
-// цвет и размер звезды по статусу (new, known, learning, review, mastered)
-export const STATUS_COLORS = ['#2C3A52', '#6B7A90', '#FFB454', '#4FD8FF', '#F4FBFF'] as const;
+// цвет и размер звезды по статусу (new, known, learning, review, mastered);
+// «Учу» — акцент экипированного клинка, читается из CSS-переменной
+export function statusColors(): string[] {
+  const accent =
+    getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4FD8FF';
+  return ['#33405C', '#7A8AA6', accent, '#FFB454', '#FFFFFF'];
+}
 const SPRITE_R = [1.5, 1.9, 2.3, 2.5, 3.0] as const;
 const SPRITE_GLOW = [0, 0, 5, 6, 8] as const;
 
+/** '#RRGGBB' или 'rgb(r, g, b)' -> 'rgba(r, g, b, a)'. */
+export function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#') && color.length === 7) {
+    const n = parseInt(color.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  return color;
+}
+
 /** Пререндер спрайтов звёзд (быстрее, чем 5000 arc() за кадр). */
 export function makeSprites(dpr: number): { canvas: HTMLCanvasElement; half: number }[] {
-  return STATUS_COLORS.map((color, i) => {
+  return statusColors().map((color, i) => {
     const r = SPRITE_R[i];
     const glow = SPRITE_GLOW[i];
     const half = r + glow + 1;
@@ -62,8 +79,8 @@ export function makeSprites(dpr: number): { canvas: HTMLCanvasElement; half: num
     if (glow > 0) {
       const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, half);
       g.addColorStop(0, color);
-      g.addColorStop(0.4, color + '55');
-      g.addColorStop(1, color + '00');
+      g.addColorStop(0.4, withAlpha(color, 0.33));
+      g.addColorStop(1, withAlpha(color, 0));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, half * 2, half * 2);
     }

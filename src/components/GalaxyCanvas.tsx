@@ -1,7 +1,9 @@
 // Карта галактики: 5000 слов-звёзд на одном canvas, масштабирование щипком,
-// перетаскивание, нажатие на звезду — подсказка (через onSelect).
+// перетаскивание, нажатие на звезду — подсказка. При открытии карта
+// разворачивается из центра (600 мс); изучаемые слова пульсируют,
+// освоенные — с лучиками. При prefers-reduced-motion — статичный кадр.
 import { useCallback, useEffect, useRef } from 'react';
-import { TOTAL_WORDS } from '../storage/codec';
+import { Status, TOTAL_WORDS } from '../storage/codec';
 import type { LevelStats } from '../store';
 import { LEVEL_CUM, LEVEL_NAMES, STAR_X, STAR_Y, makeSprites } from './starmath';
 
@@ -15,7 +17,7 @@ interface Props {
 
 interface View {
   zoom: number;
-  cx: number; // мировая точка в центре экрана
+  cx: number;
   cy: number;
 }
 
@@ -26,74 +28,125 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
   const sizeRef = useRef({ w: 0, h: 0 });
   const spritesRef = useRef<ReturnType<typeof makeSprites> | null>(null);
   const rafRef = useRef(0);
+  const openedAt = useRef(performance.now());
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const baseScale = useCallback(() => {
     const { w, h } = sizeRef.current;
     return (Math.min(w, h) / 2) * 0.94;
   }, []);
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    if (!spritesRef.current) spritesRef.current = makeSprites(dpr);
-    const sprites = spritesRef.current;
-    const { w, h } = sizeRef.current;
-    const v = viewRef.current;
-    const S = baseScale() * v.zoom;
-    const ox = w / 2 - v.cx * S;
-    const oy = h / 2 - v.cy * S;
+  const draw = useCallback(
+    (now: number) => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (!canvas || !ctx) return;
+      if (!spritesRef.current) spritesRef.current = makeSprites(dpr);
+      const sprites = spritesRef.current;
+      const { w, h } = sizeRef.current;
+      const v = viewRef.current;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+      // разворот из центра при открытии экрана
+      const openT = reduced ? 1 : Math.min(1, (now - openedAt.current) / 600);
+      const unfold = 1 - Math.pow(1 - openT, 3);
 
-    // направляющие кольца секторов
-    ctx.strokeStyle = 'rgba(79, 216, 255, 0.12)';
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 5; i++) {
-      const r = Math.sqrt(LEVEL_CUM[i] / TOTAL_WORDS) * S;
-      ctx.beginPath();
-      ctx.arc(ox, oy, r, 0, Math.PI * 2);
-      ctx.stroke();
+      const S = baseScale() * v.zoom * unfold;
+      const ox = w / 2 - v.cx * S;
+      const oy = h / 2 - v.cy * S;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = unfold;
+
+      // направляющие кольца секторов
+      ctx.strokeStyle = 'rgba(160, 190, 255, 0.12)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 5; i++) {
+        const r = Math.sqrt(LEVEL_CUM[i] / TOTAL_WORDS) * S;
+        ctx.beginPath();
+        ctx.arc(ox, oy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // звёзды
+      const margin = 12;
+      const pulse = reduced ? 1 : 0.65 + 0.35 * Math.sin(now / 480);
+      for (let id = 0; id < TOTAL_WORDS; id++) {
+        const sx = STAR_X[id] * S + ox;
+        if (sx < -margin || sx > w + margin) continue;
+        const sy = STAR_Y[id] * S + oy;
+        if (sy < -margin || sy > h + margin) continue;
+        const st = statuses[id];
+        const sp = sprites[st];
+        if (st === Status.Learning) ctx.globalAlpha = unfold * pulse;
+        ctx.drawImage(sp.canvas, sx - sp.half, sy - sp.half, sp.half * 2, sp.half * 2);
+        if (st === Status.Learning) ctx.globalAlpha = unfold;
+        // лучики освоенных
+        if (st === Status.Mastered) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 0.7;
+          const len = sp.half * 1.5;
+          ctx.beginPath();
+          ctx.moveTo(sx - len, sy);
+          ctx.lineTo(sx + len, sy);
+          ctx.moveTo(sx, sy - len);
+          ctx.lineTo(sx, sy + len);
+          ctx.stroke();
+        }
+      }
+
+      // Подписи секторов — по диагонали вверх-вправо, каждая на своём кольце.
+      // По вертикали над центром они выстраивались бы столбиком и читались
+      // как список, а не как разметка карты.
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const DIAG = -Math.PI / 4; // вверх-вправо
+      for (let i = 0; i < 5; i++) {
+        const rMid =
+          ((Math.sqrt(LEVEL_CUM[i] / TOTAL_WORDS) + Math.sqrt(LEVEL_CUM[i + 1] / TOTAL_WORDS)) / 2) * S;
+        const s = stats[i];
+        const touched = s.known + s.learned + s.learning;
+        const label = `${LEVEL_NAMES[i]} · ${touched}/${s.total}`;
+        const tw = ctx.measureText(label).width;
+        const y = oy + Math.sin(DIAG) * rMid;
+        if (y < 8 || y > h - 8) continue;
+        // не влезает справа — зеркалим на левую половину кольца
+        let x = ox + Math.cos(DIAG) * rMid + 6;
+        if (x + tw + 4 > w) x = ox - Math.cos(DIAG) * rMid - 6 - tw;
+        if (x < 4 || x + tw + 4 > w) continue;
+        ctx.fillStyle = 'rgba(6, 9, 18, 0.72)';
+        ctx.fillRect(x - 3, y - 7, tw + 6, 14);
+        ctx.fillStyle = 'rgba(180, 196, 226, 0.95)';
+        ctx.fillText(label, x, y);
+      }
+      ctx.textBaseline = 'alphabetic';
+      ctx.globalAlpha = 1;
+    },
+    [statuses, stats, baseScale, dpr, reduced],
+  );
+
+  // постоянный цикл (пульсация + разворот); пауза, когда вкладка скрыта
+  useEffect(() => {
+    spritesRef.current = null; // акцент мог смениться
+    openedAt.current = performance.now();
+    if (reduced) {
+      draw(performance.now());
+      return;
     }
-
-    // звёзды (с отсечением за пределами экрана)
-    const margin = 12;
-    for (let id = 0; id < TOTAL_WORDS; id++) {
-      const sx = STAR_X[id] * S + ox;
-      if (sx < -margin || sx > w + margin) continue;
-      const sy = STAR_Y[id] * S + oy;
-      if (sy < -margin || sy > h + margin) continue;
-      const sp = sprites[statuses[id]];
-      ctx.drawImage(
-        sp.canvas,
-        sx - sp.half,
-        sy - sp.half,
-        sp.half * 2,
-        sp.half * 2,
-      );
-    }
-
-    // подписи секторов сверху
-    ctx.font = '10px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    for (let i = 0; i < 5; i++) {
-      const rMid =
-        ((Math.sqrt(LEVEL_CUM[i] / TOTAL_WORDS) + Math.sqrt(LEVEL_CUM[i + 1] / TOTAL_WORDS)) / 2) * S;
-      const s = stats[i];
-      const touched = s.known + s.learned + s.learning;
-      const y = oy - rMid;
-      if (y < 4 || y > h) continue;
-      ctx.fillStyle = 'rgba(143, 163, 191, 0.95)';
-      ctx.fillText(`${LEVEL_NAMES[i]} · ${touched}/${s.total}`, ox, y - 4);
-    }
-  }, [statuses, stats, baseScale, dpr]);
-
-  const scheduleDraw = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(draw);
-  }, [draw]);
+    let running = true;
+    const loop = (t: number) => {
+      if (!running) return;
+      if (!document.hidden) draw(t);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [draw, reduced, version]);
 
   // размер и DPR
   useEffect(() => {
@@ -108,16 +161,11 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
       canvas.height = Math.round(h * dpr);
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-      scheduleDraw();
+      draw(performance.now());
     });
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [height, dpr, scheduleDraw]);
-
-  useEffect(() => {
-    scheduleDraw();
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [version, scheduleDraw]);
+  }, [height, dpr, draw]);
 
   // жесты
   useEffect(() => {
@@ -140,6 +188,8 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
       const r = canvas.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
+
+    const redraw = () => draw(performance.now());
 
     const onDown = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
@@ -169,7 +219,7 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
         v.cx -= dx / S;
         v.cy -= dy / S;
         clampView();
-        scheduleDraw();
+        redraw();
       } else if (pointers.size === 2) {
         moved = true;
         const [a, b] = [...pointers.values()];
@@ -185,14 +235,13 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
           v.cx += before.x - after.x;
           v.cy += before.y - after.y;
           clampView();
-          scheduleDraw();
+          redraw();
         }
       }
     };
 
     const onUp = (e: PointerEvent) => {
-      const wasTap =
-        pointers.size === 1 && !moved && start && performance.now() - start.t < 400;
+      const wasTap = pointers.size === 1 && !moved && start && performance.now() - start.t < 400;
       pointers.delete(e.pointerId);
       if (wasTap && start) {
         const v = viewRef.current;
@@ -223,12 +272,12 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
       const { w, h } = sizeRef.current;
       const before = screenToWorld(p.x, p.y, v, baseScale(), w, h);
       v.zoom *= e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      clampView();
+      v.zoom = Math.min(14, Math.max(0.7, v.zoom));
       const after = screenToWorld(p.x, p.y, v, baseScale(), w, h);
       v.cx += before.x - after.x;
       v.cy += before.y - after.y;
       clampView();
-      scheduleDraw();
+      redraw();
     };
 
     canvas.addEventListener('pointerdown', onDown);
@@ -243,7 +292,7 @@ export function GalaxyCanvas({ statuses, stats, version, height, onSelect }: Pro
       canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('wheel', onWheel);
     };
-  }, [baseScale, onSelect, scheduleDraw]);
+  }, [baseScale, onSelect, draw]);
 
   return (
     <div ref={wrapRef} className="galaxy-wrap" style={{ height }}>

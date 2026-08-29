@@ -1,4 +1,5 @@
 // Карточка слова: перевод + 10 примеров, автосохранение, «Выучил» / «Уже знаю».
+import { motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from '../AppContext';
@@ -6,6 +7,7 @@ import { POS_RU, WORDS } from '../data/words';
 import { ExamplePair, Status, dateFromDay } from '../storage/codec';
 import { haptic, onTelegramBack, showConfirm } from '../telegram';
 import { LevelBadge, SaveIndicator, STATUS_RU } from '../components/badges';
+import { ExampleRing } from '../components/ExampleRing';
 import { Panel } from '../components/Panel';
 
 const EXAMPLE_SLOTS = 10;
@@ -121,7 +123,16 @@ export function WordCard() {
         <SaveIndicator status={store.saveStatus} />
       </div>
 
-      <div className="card-word es-word">{word.word}</div>
+      {/* слово вырастает из размера строки списка — карточка «раскрывается» */}
+      <motion.div
+        className="card-word es-word"
+        style={{ transformOrigin: 'left center' }}
+        initial={{ opacity: 0, scale: 0.34, y: 4 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {word.word}
+      </motion.div>
       <div className="card-meta">
         <LevelBadge level={word.level} />
         <span className="mono">ранг {word.rank}</span>
@@ -134,7 +145,7 @@ export function WordCard() {
         )}
       </div>
 
-      <Panel title="Перевод на русский">
+      <Panel title="Перевод на русский" order={0}>
         <input
           className="input"
           value={translation}
@@ -148,10 +159,12 @@ export function WordCard() {
       </Panel>
 
       <Panel
+        order={1}
         title="Примеры"
         aside={
-          <span className="mono">
-            {filled}/10 · мин. {min}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            <span className="mono">мин. {min}</span>
+            <ExampleRing filled={filled} hasTr={translation.trim().length > 0} size={38} />
           </span>
         }
       >
@@ -159,8 +172,10 @@ export function WordCard() {
           <div className="empty-note">Загрузка…</div>
         ) : (
           pairs.map((p, i) => (
-            <div key={i} className="example-block">
-              <span className="mono field-label">Пример {i + 1}</span>
+            <div key={i} className={`example-block ${p[0].trim() ? 'example-block--filled' : ''}`}>
+              <span className="mono example-block__n" aria-label={`Пример ${i + 1}`}>
+                {i + 1}
+              </span>
               <textarea
                 className="textarea"
                 rows={1}

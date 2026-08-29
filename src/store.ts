@@ -293,6 +293,28 @@ export class AppStore {
     this.emit();
   }
 
+  /** Всего выучено (статусы «Повторяю» + «Освоено») — открывает клинки. */
+  learnedCount(): number {
+    let n = 0;
+    for (let id = 0; id < TOTAL_WORDS; id++) {
+      const st = this.statuses[id];
+      if (st === Status.Review || st === Status.Mastered) n++;
+    }
+    return n;
+  }
+
+  equipBlade(id: string): void {
+    this.meta.equipped_blade = id;
+    this.persistMeta();
+    this.emit();
+  }
+
+  markBladesSeen(count: number): void {
+    this.meta.blades_seen = count;
+    this.persistMeta();
+    this.emit();
+  }
+
   setSettings(patch: Partial<Pick<MetaData, 'new_per_day' | 'min_sentences'>>): void {
     if (patch.new_per_day !== undefined)
       this.meta.new_per_day = Math.min(50, Math.max(1, Math.round(patch.new_per_day) || 1));

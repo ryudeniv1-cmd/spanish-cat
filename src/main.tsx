@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { App } from './App';
 import { StoreContext } from './AppContext';
-import { Starfield } from './components/Starfield';
+import { Background } from './components/Background';
 import { AppStore } from './store';
 import { localAdapter, telegramAdapter, type StorageAdapter } from './storage/adapter';
 import { cloudStorageAvailable, initTelegramUi, isInTelegram, tg } from './telegram';
@@ -11,12 +11,12 @@ import { cloudStorageAvailable, initTelegramUi, isInTelegram, tg } from './teleg
 function Gate() {
   return (
     <div className="gate">
-      <Starfield />
+      <Background />
       <div className="loading-star" style={{ animation: 'none' }} />
       <h1>Открой приложение через Telegram</h1>
       <p style={{ color: 'var(--text2)', maxWidth: 420 }}>
         Данные хранятся в облаке Telegram и доступны только внутри мини-приложения. Открой бота и
-        нажми кнопку меню — мостик будет ждать.
+        нажми кнопку меню.
       </p>
     </div>
   );

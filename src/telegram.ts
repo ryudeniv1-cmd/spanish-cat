@@ -103,12 +103,15 @@ export function initTelegramUi(): void {
   }
 }
 
-export function haptic(kind: 'learned' | 'remembered' | 'forgot' | 'tap'): void {
+export function haptic(kind: 'learned' | 'remembered' | 'forgot' | 'tap' | 'unlock'): void {
   const h = tg?.HapticFeedback;
   if (!h) return;
   try {
     if (kind === 'learned') h.notificationOccurred('success');
-    else if (kind === 'remembered') h.impactOccurred('medium');
+    else if (kind === 'unlock') {
+      h.notificationOccurred('success');
+      h.impactOccurred('heavy');
+    } else if (kind === 'remembered') h.impactOccurred('light');
     else if (kind === 'forgot') h.notificationOccurred('warning');
     else h.impactOccurred('light');
   } catch {

@@ -1,4 +1,4 @@
-// «Системы»: настройки, Telegram ID, занятость хранилища, экспорт / импорт.
+// Settings: настройки, Telegram ID, занятость хранилища, экспорт / импорт.
 import { useEffect, useState } from 'react';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { copyText, showConfirm, telegramUserId } from '../telegram';
@@ -83,9 +83,9 @@ export function Settings() {
 
   return (
     <div>
-      <h1 className="screen-title">Системы</h1>
+      <h1 className="screen-title">Settings</h1>
 
-      <Panel title="Обучение">
+      <Panel title="Обучение" order={0}>
         <div className="setting-row">
           <label htmlFor="npd">Новых слов в день</label>
           <input
@@ -112,7 +112,7 @@ export function Settings() {
         </div>
       </Panel>
 
-      <Panel title="Твой Telegram ID">
+      <Panel title="Твой Telegram ID" order={1}>
         <div className="setting-row">
           <span className="mono" style={{ fontSize: 15 }}>
             {userId ?? '—'}
@@ -135,7 +135,7 @@ export function Settings() {
         </p>
       </Panel>
 
-      <Panel title="Хранилище">
+      <Panel title="Хранилище" order={2}>
         {usage === null ? (
           <div className="empty-note">Измеряю…</div>
         ) : (
@@ -155,7 +155,7 @@ export function Settings() {
         )}
       </Panel>
 
-      <Panel title="Экспорт данных">
+      <Panel title="Экспорт данных" order={3}>
         <button type="button" className="btn btn--primary btn--block" disabled={busy} onClick={() => void doExport()}>
           Сформировать экспорт
         </button>
@@ -184,7 +184,7 @@ export function Settings() {
         )}
       </Panel>
 
-      <Panel title="Импорт данных">
+      <Panel title="Импорт данных" order={4}>
         <textarea
           className="textarea"
           style={{ minHeight: 90, overflow: 'auto' }}

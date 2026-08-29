@@ -1,8 +1,8 @@
-// Мини-карта на «Мостике»: компактная полоса текущего сектора.
+// Мини-карта на Today: компактная полоса текущего сектора.
 // При недавнем «Выучил» звезда слова вспыхивает.
 import { useEffect, useRef } from 'react';
 import { LEVEL_BOUNDS, Level } from '../data/words';
-import { STATUS_COLORS, STRIP_X, STRIP_Y } from './starmath';
+import { STRIP_X, STRIP_Y, statusColors, withAlpha } from './starmath';
 
 interface Props {
   statuses: Uint8Array;
@@ -22,7 +22,7 @@ export function MiniMap({ statuses, level, version, flashId, onClick, caption }:
     if (!canvas || !ctx) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = canvas.clientWidth;
-    const h = 72;
+    const h = canvas.clientHeight || 64;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     const [from, to] = LEVEL_BOUNDS[level];
@@ -32,6 +32,7 @@ export function MiniMap({ statuses, level, version, flashId, onClick, caption }:
     const flashInBand = flashId !== null && flashId >= from && flashId < to ? flashId : null;
     const started = performance.now();
 
+    const colors = statusColors();
     const draw = (now: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
@@ -39,10 +40,10 @@ export function MiniMap({ statuses, level, version, flashId, onClick, caption }:
         const st = statuses[id];
         const x = STRIP_X[id] * (w - 8) + 4;
         const y = STRIP_Y[id] * h;
-        ctx.fillStyle = STATUS_COLORS[st];
+        ctx.fillStyle = colors[st];
         const r = st === 0 ? 1 : st === 4 ? 2.2 : 1.6;
         if (st >= 2) {
-          ctx.shadowColor = STATUS_COLORS[st];
+          ctx.shadowColor = colors[st];
           ctx.shadowBlur = 4;
         }
         ctx.beginPath();
@@ -56,7 +57,7 @@ export function MiniMap({ statuses, level, version, flashId, onClick, caption }:
         if (t < 1) {
           const x = STRIP_X[flashInBand] * (w - 8) + 4;
           const y = STRIP_Y[flashInBand] * h;
-          ctx.strokeStyle = `rgba(79, 216, 255, ${1 - t})`;
+          ctx.strokeStyle = withAlpha(colors[2], 1 - t);
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.arc(x, y, 3 + t * 14, 0, Math.PI * 2);
@@ -70,9 +71,8 @@ export function MiniMap({ statuses, level, version, flashId, onClick, caption }:
   }, [statuses, level, version, flashId]);
 
   return (
-    <button type="button" className="minimap panel" onClick={onClick} aria-label="Открыть карту галактики">
-      <span className="panel__inner" style={{ display: 'block', padding: '10px 12px' }}>
-        <span className="panel__accent" />
+    <button type="button" className="minimap glass glass--dim" onClick={onClick} aria-label="Открыть карту галактики">
+      <span className="glass__shape">
         <canvas ref={canvasRef} />
         <span className="mono" style={{ display: 'block', marginTop: 6 }}>
           {caption}

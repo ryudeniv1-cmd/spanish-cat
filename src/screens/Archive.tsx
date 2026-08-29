@@ -1,5 +1,5 @@
-// Архив: все 5000 слов, виртуализированный список, поиск, фильтры,
-// галочка «Знаю», «+ Учить», групповые действия по уровню.
+// Lexicon: 5000 слов, виртуализация, поиск, фильтры-чипы, галочка «Знаю»,
+// «+ Учить», групповые действия. Статусы — иконками, перевод под словом.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { VariableSizeList as List, ListChildComponentProps, ListOnItemsRenderedProps } from 'react-window';
@@ -7,10 +7,10 @@ import { useAppStore, useStoreVersion } from '../AppContext';
 import { LEVELS, Level, WORDS } from '../data/words';
 import { Status, StatusValue } from '../storage/codec';
 import { haptic, showConfirm } from '../telegram';
-import { STATUS_RU, StatusDot } from '../components/badges';
+import { StatusIcon } from '../components/badges';
 
 const HEADER_H = 54;
-const ROW_H = 52;
+const ROW_H = 56;
 
 type Row = { type: 'header'; level: Level } | { type: 'word'; id: number };
 
@@ -22,6 +22,15 @@ const STATUS_FILTERS: { label: string; value: StatusValue | null }[] = [
   { label: 'Повторяю', value: Status.Review },
   { label: 'Освоено', value: Status.Mastered },
 ];
+
+// слабый градиент строки в цвет статуса
+const ROW_TINT: Record<number, string> = {
+  [Status.New]: 'transparent',
+  [Status.Known]: 'linear-gradient(90deg, rgba(122,138,166,0.06), transparent 70%)',
+  [Status.Learning]: 'linear-gradient(90deg, var(--accent-soft), transparent 70%)',
+  [Status.Review]: 'linear-gradient(90deg, rgba(255,180,84,0.08), transparent 70%)',
+  [Status.Mastered]: 'linear-gradient(90deg, rgba(255,255,255,0.07), transparent 70%)',
+};
 
 function stripAccents(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -37,8 +46,10 @@ export function Archive() {
   const [statusFilter, setStatusFilter] = useState<StatusValue | null>(null);
   const [listHeight, setListHeight] = useState(400);
   const [stickyLevel, setStickyLevel] = useState<Level | null>(null);
+  const [scrollLevel, setScrollLevel] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<List>(null);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
@@ -84,33 +95,47 @@ export function Archive() {
       const r = rows[i];
       if (r && r.type === 'header') {
         setStickyLevel(r.level);
-        return;
+        break;
       }
+    }
+    // индикатор уровня у правого края при прокрутке
+    const cur = rows[visibleStartIndex];
+    if (cur) {
+      setScrollLevel(cur.type === 'header' ? cur.level : WORDS[cur.id].level);
+      if (scrollTimer.current) clearTimeout(scrollTimer.current);
+      scrollTimer.current = setTimeout(() => setScrollLevel(null), 900);
     }
   };
 
   const itemSize = (i: number) => (rows[i].type === 'header' ? HEADER_H : ROW_H);
 
-  const RowRenderer = ({ index, style }: ListChildComponentProps) => {
-    const row = rows[index];
-    if (row.type === 'header') {
-      return (
-        <div style={style}>
-          <LevelHeader level={row.level} />
-        </div>
-      );
-    }
+  function LevelRing({ level }: { level: Level }) {
+    const s = store.levelStats().find((x) => x.level === level)!;
+    const pct = (s.known + s.learned) / s.total;
+    const r = 12;
+    const circ = Math.PI * 2 * r;
     return (
-      <div style={style}>
-        <WordRow id={row.id} />
-      </div>
+      <svg className="level-ring" viewBox="0 0 30 30">
+        <circle cx="15" cy="15" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+        <circle
+          cx="15"
+          cy="15"
+          r={r}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={`${circ * pct} ${circ}`}
+        />
+      </svg>
     );
-  };
+  }
 
   function LevelHeader({ level }: { level: Level }) {
     const s = store.levelStats().find((x) => x.level === level)!;
     return (
       <div className="level-header">
+        <LevelRing level={level} />
         <span className="level-header__name">{level}</span>
         <span className="mono level-header__count">
           {s.known + s.learned} / {s.total}
@@ -144,17 +169,20 @@ export function Archive() {
   function WordRow({ id }: { id: number }) {
     const w = WORDS[id];
     const st = store.status(id);
+    const tr = store.translation(id);
     const simple = st === Status.New || st === Status.Known;
     return (
       <div
         className="word-row"
         role={simple ? undefined : 'button'}
         onClick={simple ? undefined : () => navigate(`/card/${id}`)}
-        style={simple ? undefined : { cursor: 'pointer' }}
+        style={{ background: ROW_TINT[st], cursor: simple ? undefined : 'pointer' }}
       >
-        <StatusDot status={st} />
-        <span className="es-word">{w.word}</span>
-        <span className="mono">{w.rank}</span>
+        <StatusIcon status={st} />
+        <span className="word-row__main">
+          <span className="es-word">{w.word}</span>
+          {tr && <span className="tr">{tr}</span>}
+        </span>
         {st === Status.New && (
           <button
             type="button"
@@ -168,7 +196,7 @@ export function Archive() {
             + Учить
           </button>
         )}
-        {simple ? (
+        {simple && (
           <input
             type="checkbox"
             className="check"
@@ -179,12 +207,26 @@ export function Archive() {
               store.toggleKnown(id);
             }}
           />
-        ) : (
-          <span className="mono">{STATUS_RU[st]}</span>
         )}
       </div>
     );
   }
+
+  const RowRenderer = ({ index, style }: ListChildComponentProps) => {
+    const row = rows[index];
+    if (row.type === 'header') {
+      return (
+        <div style={style}>
+          <LevelHeader level={row.level} />
+        </div>
+      );
+    }
+    return (
+      <div style={style}>
+        <WordRow id={row.id} />
+      </div>
+    );
+  };
 
   return (
     <div
@@ -195,7 +237,7 @@ export function Archive() {
           'calc(100dvh - var(--safe-top) - var(--tabbar-h) - var(--safe-bottom) - 36px)',
       }}
     >
-      <h1 className="screen-title">Архив</h1>
+      <h1 className="screen-title">Lexicon</h1>
       <div className="archive-controls">
         <input
           className="input"
@@ -242,6 +284,7 @@ export function Archive() {
                 <LevelHeader level={stickyLevel} />
               </div>
             )}
+            <div className={`scroll-level ${scrollLevel ? 'visible' : ''}`}>{scrollLevel}</div>
             <List
               ref={listRef}
               height={listHeight}
@@ -250,6 +293,7 @@ export function Archive() {
               itemSize={itemSize}
               onItemsRendered={onItemsRendered}
               overscanCount={8}
+              style={{ scrollbarWidth: 'none' }}
             >
               {RowRenderer}
             </List>

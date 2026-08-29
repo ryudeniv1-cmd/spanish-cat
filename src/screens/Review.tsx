@@ -8,7 +8,7 @@ import { ExamplePair } from '../storage/codec';
 import { haptic, onTelegramBack } from '../telegram';
 import { LevelBadge } from '../components/badges';
 import { Panel } from '../components/Panel';
-import { warpStarfield } from '../components/Starfield';
+import { warpStarfield } from '../components/Background';
 
 export function Review() {
   const store = useAppStore();
@@ -19,14 +19,16 @@ export function Review() {
   const [done, setDone] = useState(0);
   const failed = useRef(new Set<number>());
   const [revealed, setRevealed] = useState(false);
-  const [turning, setTurning] = useState(false);
+  const [flip, setFlip] = useState<'none' | 'out' | 'in'>('none');
   const [input, setInput] = useState('');
   const [examples, setExamples] = useState<ExamplePair[] | null>(null);
   const [anim, setAnim] = useState('');
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const goHome = useCallback(() => navigate('/'), [navigate]);
   useEffect(() => onTelegramBack(goHome), [goHome]);
   useEffect(() => warpStarfield(), []);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   const current = queue[0];
   const word = current !== undefined ? WORDS[current] : null;
@@ -42,11 +44,15 @@ export function Review() {
       setRevealed(true);
       return;
     }
-    setTurning(true);
-    setTimeout(() => {
-      setRevealed(true);
-      setTurning(false);
-    }, 160);
+    setFlip('out');
+    timers.current.push(
+      setTimeout(() => {
+        setRevealed(true);
+        setFlip('in'); // мгновенно на +90°, без перехода
+        // два кадра, чтобы браузер успел отрисовать +90° до возврата в 0
+        requestAnimationFrame(() => requestAnimationFrame(() => setFlip('none')));
+      }, 170),
+    );
   };
 
   const advance = (removeCurrent: boolean) => {
@@ -55,7 +61,7 @@ export function Review() {
       return removeCurrent ? rest : [...rest, head];
     });
     setRevealed(false);
-    setTurning(false);
+    setFlip('none');
     setInput('');
     setExamples(null);
   };
@@ -65,11 +71,13 @@ export function Review() {
     haptic('remembered');
     if (!failed.current.has(current)) store.reviewRemembered(current);
     setDone((d) => d + 1);
-    setAnim('pulse-blue');
-    setTimeout(() => {
-      setAnim('');
-      advance(true);
-    }, 220);
+    setAnim('wave-pulse');
+    timers.current.push(
+      setTimeout(() => {
+        setAnim('');
+        advance(true);
+      }, 220),
+    );
   };
 
   const onForgot = () => {
@@ -80,10 +88,12 @@ export function Review() {
       failed.current.add(current);
     }
     setAnim('flash-amber');
-    setTimeout(() => {
-      setAnim('');
-      advance(false);
-    }, 260);
+    timers.current.push(
+      setTimeout(() => {
+        setAnim('');
+        advance(false);
+      }, 260),
+    );
   };
 
   if (session.length === 0 || queue.length === 0) {
@@ -94,7 +104,7 @@ export function Review() {
           {session.length === 0 ? 'Сегодня повторять нечего.' : `Пройдено слов: ${session.length}.`}
         </p>
         <button type="button" className="btn btn--primary" onClick={goHome}>
-          На мостик
+          На главный
         </button>
       </div>
     );
@@ -109,7 +119,7 @@ export function Review() {
     <div>
       <div className="topbar" style={{ justifyContent: 'space-between' }}>
         <button type="button" className="back-btn" onClick={goHome}>
-          ← Мостик
+          ← Today
         </button>
         <span className="mono">
           {Math.min(done + 1, session.length)} из {session.length}
@@ -117,12 +127,9 @@ export function Review() {
       </div>
 
       <div className="review-stage">
-        <div
-          className={`review-card ${anim}`}
-          style={{ transition: turning ? 'transform .16s linear' : undefined, transform: turning ? 'rotateY(90deg)' : undefined }}
-        >
+        <div className={`review-card ${flip === 'none' ? '' : `review-card--${flip}`} ${anim}`}>
           {!revealed ? (
-            <Panel title="Вспомни слово">
+            <Panel title="Вспомни слово" animated={false}>
               <div className="review-translation">{translation || '— перевод не записан —'}</div>
               <label className="mono field-label" htmlFor="rev-input">
                 Напиши по-испански (необязательно)
@@ -145,6 +152,7 @@ export function Review() {
           ) : (
             <div className="sheen">
               <Panel
+                animated={false}
                 title={
                   <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
                     Ответ <LevelBadge level={word!.level} />
