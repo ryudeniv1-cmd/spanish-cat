@@ -128,7 +128,13 @@ export function Settings() {
         </div>
       </Panel>
 
-      <Panel title="Твой Telegram ID" order={1}>
+      <Panel title="Версия" order={1}>
+        <div className="setting-row">
+          <span className="mono" style={{ fontSize: 12 }}>{__BUILD_ID__}</span>
+        </div>
+      </Panel>
+
+      <Panel title="Твой Telegram ID" order={2}>
         <div className="setting-row">
           <span className="mono" style={{ fontSize: 15 }}>
             {userId ?? '—'}
@@ -151,7 +157,7 @@ export function Settings() {
         </p>
       </Panel>
 
-      <Panel title="Хранилище" order={2}>
+      <Panel title="Хранилище" order={3}>
         {usage === null ? (
           <div className="empty-note">Измеряю…</div>
         ) : (
@@ -171,7 +177,7 @@ export function Settings() {
         )}
       </Panel>
 
-      <Panel title="Экспорт данных" order={3}>
+      <Panel title="Экспорт данных" order={4}>
         <button type="button" className="btn btn--primary btn--block" disabled={busy} onClick={() => void doExport()}>
           Сформировать экспорт
         </button>
@@ -200,7 +206,7 @@ export function Settings() {
         )}
       </Panel>
 
-      <Panel title="Импорт данных" order={4}>
+      <Panel title="Импорт данных" order={5}>
         <textarea
           className="textarea"
           style={{ minHeight: 90, overflow: 'auto' }}
