@@ -58,10 +58,12 @@ body {
   min-height: 100dvh;
 }
 
+/* z-index: -1, а не 0 — тогда .app может обойтись без своего z-index и не
+   создаёт контекст наложения: mix-blend-mode внутри достаёт до неба. */
 .bg-canvas {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
 }
 
@@ -73,7 +75,6 @@ body {
   max-width: 640px;
   margin: 0 auto;
   position: relative;
-  z-index: 1;
 }
 
 .app--bare {
@@ -413,84 +414,581 @@ button {
 }
 
 /* ============ Today ============ */
-.blade-stage {
-  height: min(34dvh, 300px);
+/* Весь экран красится от --accent: он же цвет экипированного клинка. */
+
+.today-top {
   position: relative;
-  margin: -4px -8px 6px;
+  height: min(46dvh, 380px);
+  margin: 0 -4px 12px;
 }
 
-.blade-stage canvas {
+.today-top__inner {
+  position: relative;
+  height: 100%;
+}
+
+/* Лёгкий параллакс: верхний блок отстаёт от прокрутки. Висит не на общем
+   родителе, а на соседних элементах — предок с transform создал бы контекст
+   наложения и отрезал бы mix-blend-mode персонажа от звёздного неба.
+   Прогрессивное улучшение: где scroll-timeline нет, блок едет как обычно. */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .saber-col,
+    .streak,
+    .platform-wrap,
+    .hero-video {
+      animation: today-parallax linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 340px;
+    }
+  }
+}
+
+.platform-wrap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+@keyframes today-parallax {
+  to {
+    transform: translateY(52px);
+    opacity: 0.5;
+  }
+}
+
+.today-stage {
+  display: grid;
+  grid-template-columns: 0.6fr 1fr;
+  gap: 10px;
+  height: 100%;
+  align-items: end;
+}
+
+/* --- серия --- */
+.streak {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 0 6px;
+  padding: 7px 13px 6px;
+  border-radius: 15px;
+  background: rgba(13, 18, 32, 0.7);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.streak__ic {
+  width: 19px;
+  height: 19px;
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+
+.streak__n {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1;
+}
+
+.streak__cap {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text2);
+  margin-top: 2px;
+}
+
+/* --- клинок в рамке со срезанными углами --- */
+.saber-col {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.saber-frame {
+  --cut: 15px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 1.5px;
+  background: linear-gradient(
+    180deg,
+    var(--accent-dim),
+    rgba(255, 255, 255, 0.09) 45%,
+    var(--accent-dim)
+  );
+  clip-path: polygon(
+    var(--cut) 0,
+    calc(100% - var(--cut)) 0,
+    100% var(--cut),
+    100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%,
+    var(--cut) 100%,
+    0 calc(100% - var(--cut)),
+    0 var(--cut)
+  );
+  filter: drop-shadow(0 0 16px var(--accent-glow));
+}
+
+.saber-frame__in {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  clip-path: inherit;
+  background: linear-gradient(180deg, rgba(9, 12, 24, 0.94), rgba(4, 7, 14, 0.97));
+}
+
+.saber-frame__in canvas {
   touch-action: pan-y;
 }
 
-.blade-progress {
+.blade-glyph--frame {
+  width: auto;
+  height: 82%;
+  margin: 9% auto;
+}
+
+.saber-tag {
+  margin-top: 9px;
+  padding: 7px 8px 8px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.045);
+  clip-path: polygon(11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%, 0 11px);
+}
+
+.saber-tag__cap {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--text2);
+}
+
+.saber-tag__name {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent-glow);
+  overflow-wrap: anywhere;
+}
+
+/* --- персонаж на платформе --- */
+.hero-col {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+
+.hero-stage {
+  position: relative;
+  height: 100%;
+}
+
+/* У роликов фон чёрный: lighten растворяет его в звёздном небе. */
+.hero-video {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7%;
+  width: 100%;
+  height: 93%;
+  object-fit: contain;
+  object-position: center bottom;
+  mix-blend-mode: lighten;
+  opacity: 0;
+  transition: opacity 0.42s linear;
+  pointer-events: none;
+}
+
+/* Кольца: диск «положен» через rotateX, дуги видно при вращении.
+   Анимируется только transform — композитор тянет это без затрат. */
+.platform {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 96%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, 41%) rotateX(74deg);
+  pointer-events: none;
+}
+
+/* Ровная тусклая окружность плюс яркая дуга, которая по ней бежит:
+   вращение видно, а кольца читаются как кольца. */
+.platform__ring {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+  border: 1px solid var(--accent-soft);
+}
+
+.platform__ring::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 58%, var(--accent) 72% 86%, transparent 97% 100%);
+  -webkit-mask: radial-gradient(closest-side, transparent 92%, #000 95%);
+  mask: radial-gradient(closest-side, transparent 92%, #000 95%);
+  animation: ring-spin var(--ring-dur) linear infinite;
+  will-change: transform;
+}
+
+.platform__ring--1 {
+  width: 100%;
+  height: 100%;
+  --ring-dur: 28s;
+}
+
+.platform__ring--2 {
+  width: 73%;
+  height: 73%;
+  --ring-dur: 19s;
+}
+
+.platform__ring--2::after {
+  animation-direction: reverse;
+}
+
+.platform__ring--3 {
+  width: 48%;
+  height: 48%;
+  --ring-dur: 13s;
+}
+
+@keyframes ring-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* мягкое пятно света под ногами */
+.platform__disc {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 66%;
+  height: 17%;
+  transform: translate(-50%, 32%);
+  background: radial-gradient(ellipse at 50% 50%, var(--accent-glow), transparent 72%);
+  pointer-events: none;
+}
+
+/* волна: свет поднимается от платформы до колен и гаснет, цикл 3 с */
+.platform__wave {
+  position: absolute;
+  left: 50%;
+  bottom: 2%;
+  width: 62%;
+  height: 44%;
+  background: radial-gradient(ellipse at 50% 100%, var(--accent-glow) 0%, transparent 70%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: wave-rise 3s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes wave-rise {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12%) scaleY(0.45);
+  }
+  22% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-52%) scaleY(1.05);
+  }
+}
+
+/* --- прогресс до следующего клинка --- */
+.prog-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.prog-head__lvl {
+  color: var(--accent);
+}
+
+.prog-head__sep {
+  color: var(--text2);
+}
+
+.prog-head__num {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.prog-track {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 6px;
-  margin-bottom: 14px;
+  margin: 14px 0 10px;
 }
 
-.blade-progress__bar {
+.prog-track__rail {
+  position: relative;
   flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
+  height: 14px;
 }
 
-.blade-progress__fill {
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
+.prog-track__line,
+.prog-track__fill {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+
+.prog-track__line {
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.prog-track__fill {
+  left: 0;
+  background: var(--accent);
   box-shadow: 0 0 10px var(--accent-glow);
   transition: width 0.6s var(--ease);
 }
 
-/* Выбранный персонаж — фоновый слой Today.
-   z-index не задаём: слой идёт в DOM после .bg-canvas (z-index 0), поэтому
-   рисуется поверх неба, но ниже .app (z-index 1) — то есть позади всего
-   содержимого. mix-blend-mode здесь, а не на видео: у ролика фон чёрный,
-   lighten растворяет его в звёздном небе, остаётся только фигура. */
-.companion-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  overflow: hidden;
-  mix-blend-mode: lighten;
-  /* приглушён, иначе светлая фигура забивает текст в панелях поверх неё */
-  opacity: 0.32;
+.prog-track__dot {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2c3752;
+  transform: translate(-50%, -50%);
+  transition: background 0.4s var(--ease), box-shadow 0.4s var(--ease);
 }
 
-.companion-layer__video {
+.prog-track__dot.is-on {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.prog-track__saber {
+  width: 14px;
+  height: 44px;
+  flex: none;
+  filter: drop-shadow(0 0 7px var(--accent-glow));
+}
+
+.prog-note {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.prog-note b {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* --- задание на сегодня --- */
+.day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.day-head__cap {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.day-head__count {
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+
+.day-head__count span {
+  color: var(--text2);
+}
+
+.day-big {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(26px, 8.5vw, 34px);
+  line-height: 1.12;
+  margin: 8px 0 14px;
+}
+
+.day-big--empty {
+  color: var(--text2);
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.day-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.day-chip {
+  padding: 8px 15px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+/* Кнопка: ровное внешнее сияние плюс блик, идущий внутри, как импульс
+   по лезвию. Двигается только transform блика — 60 fps на телефоне. */
+.btn-start {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border: none;
+  padding: 15px 20px;
+  border-radius: 14px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  color: #0a1018;
+  background: var(--accent);
+  box-shadow: 0 0 26px var(--accent-glow), 0 8px 26px var(--accent-glow);
+}
+
+.btn-start:active {
+  transform: translateY(1px) scale(0.995);
+}
+
+.btn-start span {
+  position: relative;
+  z-index: 1;
+}
+
+.btn-start::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 36%, rgba(255, 255, 255, 0.45) 50%, transparent 64%);
+  transform: translateX(-120%);
+  animation: start-shine 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes start-shine {
+  0%,
+  58% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* --- повторение --- */
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text);
+}
+
+.review-row:disabled {
+  opacity: 0.8;
+}
+
+.review-row__ic {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-soft);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.review-row__ic svg {
+  width: 26px;
+  height: 26px;
+}
+
+.review-row__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.review-row__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.review-row__count b {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.review-row__note {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.review-row__arrow {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--text2);
+}
+
+.review-row__arrow svg {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: center bottom;
-  display: block;
 }
 
-.word-hero {
-  text-align: center;
-  padding: 6px 0 2px;
-}
+/* На узком экране клинок уже, персонаж крупнее — но по-прежнему рядом. */
+@media (max-width: 400px) {
+  .today-stage {
+    grid-template-columns: 0.46fr 1fr;
+    gap: 6px;
+  }
 
-.word-hero .es-word {
-  font-size: 40px;
-  line-height: 1.1;
-  text-shadow: 0 0 24px var(--accent-glow);
-  overflow-wrap: anywhere;
-}
-
-.word-hero__meta {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 0 4px;
+  .saber-frame {
+    --cut: 12px;
+  }
 }
 
 .progress-ring {
@@ -538,13 +1036,6 @@ button {
   gap: 2px;
 }
 
-.dots-row {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin: 12px 0 4px;
-  flex-wrap: wrap;
-}
 
 .dot {
   width: 6px;
@@ -566,12 +1057,6 @@ button {
   box-shadow: 0 0 8px rgba(255, 180, 84, 0.6);
 }
 
-.review-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
 
 .review-strip .count {
   font-family: var(--font-display);
@@ -1124,21 +1609,7 @@ button {
 }
 
 /* силуэт во весь рост сцены на Today */
-.blade-stage__fallback {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding-bottom: 6px;
-}
 
-.blade-glyph--stage {
-  width: auto;
-  height: min(86%, 250px);
-  flex: none;
-}
 
 /* полноэкранный просмотр клинка */
 .blade-view {
@@ -1149,9 +1620,7 @@ button {
   backdrop-filter: blur(10px);
   display: flex;
   flex-direction: column;
-  /* .app создаёт свой контекст наложения, поэтому таббар остаётся поверх
-     оверлея — кнопке нужен отступ на его высоту */
-  padding: calc(var(--safe-top) + 14px) 18px calc(var(--tabbar-h) + var(--safe-bottom) + 18px);
+  padding: calc(var(--safe-top) + 14px) 18px calc(var(--safe-bottom) + 18px);
 }
 
 .blade-view__stage {
@@ -1479,12 +1948,21 @@ button {
   .ring-seg--lit {
     animation: none;
   }
+  .platform__ring::after,
+  .btn-start::after,
+  .today-top__inner {
+    animation: none;
+  }
+  .platform__wave {
+    animation: none;
+    opacity: 0.45;
+  }
   .btn,
   .chip,
   .dot,
   .ring-seg,
   .seg__pill,
-  .blade-progress__fill {
+  .prog-track__fill {
     transition-property: opacity;
   }
   .review-card {

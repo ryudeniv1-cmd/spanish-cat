@@ -295,6 +295,25 @@ export class AppStore {
     this.emit();
   }
 
+  /** Выучено сегодня — прогресс дневной нормы. */
+  learnedToday(): number {
+    return this.learnedByDay(1)[0];
+  }
+
+  /** Дней подряд с выполненной нормой. Сегодня, пока норма не набрана,
+      серию не обрывает — отсчёт просто начинается со вчера. */
+  streakDays(): number {
+    const norm = Math.max(1, this.meta.new_per_day);
+    const byDay = this.learnedByDay(90); // последний элемент — сегодня
+    let n = 0;
+    for (let i = byDay.length - 1; i >= 0; i--) {
+      if (byDay[i] >= norm) n++;
+      else if (i === byDay.length - 1) continue;
+      else break;
+    }
+    return n;
+  }
+
   /** Всего выучено (статусы «Повторяю» + «Освоено») — открывает клинки. */
   learnedCount(): number {
     let n = 0;

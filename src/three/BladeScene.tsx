@@ -377,15 +377,23 @@ export interface BladeSceneProps {
   reveal?: number | null;
   interactive?: boolean;
   bloomIntensity?: number;
+  /** Отдаление камеры: меньше — клинок крупнее в кадре. */
+  cameraZ?: number;
 }
 
-export function BladeScene({ blade, reveal, interactive = true, bloomIntensity = 1.5 }: BladeSceneProps) {
+export function BladeScene({
+  blade,
+  reveal,
+  interactive = true,
+  bloomIntensity = 1.5,
+  cameraZ = 8.2,
+}: BladeSceneProps) {
   const [degraded, setDegraded] = useState(false);
   return (
     <Canvas
       dpr={degraded ? 1 : [1, 2]}
       gl={{ antialias: false, alpha: true, powerPreference: 'high-performance' }}
-      camera={{ position: [0, 0.2, 8.2], fov: 38 }}
+      camera={{ position: [0, 0.2, cameraZ], fov: 38 }}
       style={{ width: '100%', height: '100%' }}
     >
       <ambientLight intensity={0.25} />

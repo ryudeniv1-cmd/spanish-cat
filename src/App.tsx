@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from './AppContext';
 import { Background } from './components/Background';
-import { CompanionLayer } from './components/CompanionLayer';
 import { TabBar } from './components/TabBar';
 import { applyAccent } from './theme/accent';
 import { BLADES, bladeById, unlockedBlades } from './theme/blades';
@@ -27,21 +26,13 @@ const EXPAND = {
   animate: { opacity: 1, scale: 1, y: 0 },
 };
 
-// Вкладки, кроме Today. Today рендерится и по '/', и по маршруту '*' —
-// Telegram при запуске кладёт параметры в хеш (#tgWebAppData=...), и путь
-// тогда не '/', поэтому проверять на равенство '/' нельзя.
-const NOT_TODAY = ['/lexicon', '/galaxy', '/armory', '/settings', '/archive', '/map'];
-
 function Layout() {
   const location = useLocation();
   const card = location.pathname.startsWith('/card');
   const bare = card || location.pathname.startsWith('/review');
-  const today = !bare && !NOT_TODAY.some((p) => location.pathname.startsWith(p));
   return (
     <>
       <Background />
-      {/* персонаж поверх неба, но под всем содержимым — только на Today */}
-      {today && <CompanionLayer />}
       <div className={bare ? 'app app--bare' : 'app'}>
         {/* Смена key перемонтирует обёртку — этого достаточно, чтобы новый
             экран появился с анимацией. AnimatePresence с exit здесь работать

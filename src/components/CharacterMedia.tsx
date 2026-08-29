@@ -175,3 +175,116 @@ export function IdleVideo({
 export function CharacterSilhouette({ className }: { className?: string }) {
   return <img className={className ?? 'char-silhouette'} src={silhouetteUrl} alt="" aria-hidden="true" />;
 }
+
+/**
+ * Персонаж на Today: один ролик целиком, пауза 5–10 с на последнем кадре,
+ * затем следующий случайный. Два наложенных <video> с кроссфейдом — пока
+ * играет передний, задний уже держит первый кадр следующего ролика, поэтому
+ * смены не видно: ни рывка, ни чёрного кадра.
+ */
+const HOLD_MIN = 5000;
+const HOLD_MAX = 10000;
+const FADE_MS = 420;
+
+export function IdleCycler({ sources, className }: { sources: string[]; className?: string }) {
+  const aRef = useRef<HTMLVideoElement>(null);
+  const bRef = useRef<HTMLVideoElement>(null);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    const a = aRef.current;
+    const b = bRef.current;
+    if (!a || !b || sources.length === 0) return;
+
+    let alive = true;
+    let holdTimer = 0;
+    let swapTimer = 0;
+    let front = 0;
+
+    const pick = (not?: string): string => {
+      const pool = sources.length > 1 ? sources.filter((s) => s !== not) : sources;
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+    const el = (i: number) => (i === 0 ? a! : b!);
+
+    // первый кадр появляется и без воспроизведения: перемотка в начало
+    const showFirstFrame = (v: HTMLVideoElement) => {
+      const seek = () => {
+        try {
+          v.currentTime = 0.001;
+        } catch {
+          /* кадр появится, когда догрузятся метаданные */
+        }
+      };
+      if (v.readyState >= 1) seek();
+      else v.addEventListener('loadedmetadata', seek, { once: true });
+    };
+
+    let frontSrc = pick();
+    a.src = frontSrc;
+    a.style.opacity = '1';
+    b.style.opacity = '0';
+
+    if (reduced) {
+      showFirstFrame(a);
+      return () => {
+        alive = false;
+      };
+    }
+
+    let backSrc = pick(frontSrc);
+    b.src = backSrc;
+    showFirstFrame(b);
+
+    const onEnded = () => {
+      if (!alive) return;
+      // ролик замер на последнем кадре — держим паузу и уходим в следующий
+      const hold = HOLD_MIN + Math.random() * (HOLD_MAX - HOLD_MIN);
+      holdTimer = window.setTimeout(swap, hold);
+    };
+
+    const swap = () => {
+      if (!alive) return;
+      const cur = el(front);
+      const nxt = el(1 - front);
+      void nxt.play().catch(() => undefined);
+      nxt.style.opacity = '1';
+      cur.style.opacity = '0';
+      front = 1 - front;
+      frontSrc = backSrc;
+      // освободившийся элемент готовит следующий ролик уже под кроссфейдом
+      swapTimer = window.setTimeout(() => {
+        if (!alive) return;
+        cur.pause();
+        backSrc = pick(frontSrc);
+        cur.src = backSrc;
+        cur.load();
+        showFirstFrame(cur);
+      }, FADE_MS + 60);
+    };
+
+    a.addEventListener('ended', onEnded);
+    b.addEventListener('ended', onEnded);
+    void a.play().catch(() => undefined);
+
+    return () => {
+      alive = false;
+      clearTimeout(holdTimer);
+      clearTimeout(swapTimer);
+      a.removeEventListener('ended', onEnded);
+      b.removeEventListener('ended', onEnded);
+      a.pause();
+      b.pause();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduced, sources.join('|')]);
+
+  if (sources.length === 0) return null;
+
+  return (
+    <>
+      <video ref={aRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
+      <video ref={bRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
+    </>
+  );
+}
