@@ -10,8 +10,9 @@
 
 import type { Level } from './words';
 
-/** Чем открывается персонаж: пройденным уровнем или числом выученных слов. */
-export type UnlockType = 'level' | 'words';
+/** Чем открывается персонаж: доступен всегда, пройденным уровнем
+    или числом выученных слов. */
+export type UnlockType = 'always' | 'level' | 'words';
 
 interface CharacterBase {
   id: string;
@@ -21,10 +22,14 @@ interface CharacterBase {
 }
 
 export type Character = CharacterBase &
-  ({ unlockType: 'level'; unlockValue: Level } | { unlockType: 'words'; unlockValue: number });
+  (
+    | { unlockType: 'always' }
+    | { unlockType: 'level'; unlockValue: Level }
+    | { unlockType: 'words'; unlockValue: number }
+  );
 
 export const CHARACTERS: Character[] = [
-  { id: 'amidala', name: 'Amidala', unlockType: 'level', unlockValue: 'A1', clips: ['amidala-idle-1.mp4', 'amidala-idle-2.mp4', 'amidala-idle-3.mp4'] },
+  { id: 'amidala', name: 'Amidala', unlockType: 'always', clips: ['amidala-idle-1.mp4', 'amidala-idle-2.mp4', 'amidala-idle-3.mp4'] },
   { id: 'slot-a2', name: '', unlockType: 'level', unlockValue: 'A2', clips: [] },
   { id: 'slot-b1', name: '', unlockType: 'level', unlockValue: 'B1', clips: [] },
   { id: 'slot-b2', name: '', unlockType: 'level', unlockValue: 'B2', clips: [] },
@@ -58,12 +63,15 @@ export interface CrewProgress {
 
 export function isCharacterUnlocked(c: Character, p: CrewProgress): boolean {
   if (clipUrls(c).length === 0) return false; // слот-заглушка
+  if (c.unlockType === 'always') return true;
   return c.unlockType === 'level'
     ? p.completedLevels.includes(c.unlockValue)
     : p.learned >= c.unlockValue;
 }
 
-/** Условие открытия одной строкой: «уровень A1» / «2500 слов». */
-export function unlockLabel(c: Character): string {
+/** Условие открытия одной строкой: «уровень A1» / «2500 слов».
+    null — условия нет, персонаж доступен всегда. */
+export function unlockLabel(c: Character): string | null {
+  if (c.unlockType === 'always') return null;
   return c.unlockType === 'level' ? `уровень ${c.unlockValue}` : `${c.unlockValue} слов`;
 }

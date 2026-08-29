@@ -130,6 +130,9 @@ export function Armory() {
           {CHARACTERS.map((c, i) => {
             const unlocked = isCharacterUnlocked(c, progress);
             const onToday = unlocked && equippedChar === c.id;
+            const need = unlockLabel(c);
+            // у доступного всегда персонажа строки с условием нет — только имя
+            const sub = unlocked ? (onToday ? 'на Today' : need && `открыт за ${need}`) : need;
             return (
               <motion.button
                 key={c.id}
@@ -153,13 +156,7 @@ export function Armory() {
                   )}
                 </div>
                 <div className="char-card__name">{unlocked ? c.name : '???'}</div>
-                <div className="char-card__sub">
-                  {unlocked
-                    ? onToday
-                      ? 'на Today'
-                      : `открыт за ${unlockLabel(c)}`
-                    : unlockLabel(c)}
-                </div>
+                {sub && <div className="char-card__sub">{sub}</div>}
               </motion.button>
             );
           })}
@@ -229,7 +226,9 @@ export function Armory() {
               />
             </div>
             <h2>{crewView.name}</h2>
-            <p className="tagline">открыт за {unlockLabel(crewView)}</p>
+            {unlockLabel(crewView) && (
+              <p className="tagline">открыт за {unlockLabel(crewView)}</p>
+            )}
             {equippedChar === crewView.id ? (
               <button
                 type="button"

@@ -6,6 +6,8 @@
 // ролик не запускается вовсе — показывается первый кадр.
 import { useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+// через сборщик, а не абсолютным путём: иначе на GitHub Pages потеряется base
+import silhouetteUrl from '../presets/siluet.png';
 
 const MAX_PLAYING = 4;
 
@@ -148,18 +150,5 @@ export function IdleVideo({
 
 /** Тёмный силуэт фигуры для закрытой карточки: видео не грузится. */
 export function CharacterSilhouette({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 90 124"
-      className={className ?? 'char-silhouette'}
-      preserveAspectRatio="xMidYMax meet"
-      aria-hidden="true"
-    >
-      <g fill="#0e1425" stroke="rgba(255,255,255,0.07)" strokeWidth="1">
-        <ellipse cx="45" cy="26" rx="11" ry="13" />
-        {/* плечи, руки вдоль тела и уходящий за нижний край плащ */}
-        <path d="M45 40c-4.4 0-7 1-8 2.7-1.1 1.9-6.2 3.4-10.4 6.3-4.5 3.1-6.9 8-7.6 14.3L15.6 106c-.6 5.4.3 12 2.7 18h53.4c2.4-6 3.3-12.6 2.7-18l-3.4-42.7c-.7-6.3-3.1-11.2-7.6-14.3-4.2-2.9-9.3-4.4-10.4-6.3C52 41 49.4 40 45 40z" />
-      </g>
-    </svg>
-  );
+  return <img className={className ?? 'char-silhouette'} src={silhouetteUrl} alt="" aria-hidden="true" />;
 }

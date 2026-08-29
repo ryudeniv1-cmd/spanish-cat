@@ -1298,14 +1298,22 @@ button {
   border-radius: 13px;
   overflow: hidden;
   background: #0c1120;
+  /* mix-blend-mode силуэта не должен доставать до фона приложения */
+  isolation: isolate;
 }
 
-.char-video {
+/* Фигура занимает ~80% высоты блока и стоит на нижнем крае,
+   вокруг остаётся воздух; contain — чтобы её не обрезало по краям. */
+.char-video,
+.char-silhouette {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  left: 8%;
+  right: 8%;
+  bottom: 6%;
+  height: 80%;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
   display: block;
 }
 
@@ -1315,13 +1323,21 @@ button {
   background: radial-gradient(120% 90% at 50% 100%, rgba(255, 255, 255, 0.03), transparent 70%), #0a0f1d;
 }
 
+/* У роликов фон чёрный: lighten растворяет его в фоне карточки, и фигура
+   стоит прямо на ней, без чёрного прямоугольника вокруг. */
+.char-video {
+  mix-blend-mode: lighten;
+}
+
+/* siluet.png непрозрачный — тёмная фигура со свечением на тёмном фоне.
+   lighten так же убирает её собственный фон, а радиальная маска гасит
+   края, чтобы не проступала граница прямоугольника: остаётся тёмный
+   силуэт со слабым свечением по контуру. */
 .char-silhouette {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  filter: drop-shadow(0 0 7px var(--accent-glow));
-  opacity: 0.6;
+  mix-blend-mode: lighten;
+  -webkit-mask-image: radial-gradient(112% 82% at 50% 60%, #000 52%, transparent 100%);
+  mask-image: radial-gradient(112% 82% at 50% 60%, #000 52%, transparent 100%);
+  opacity: 0.9;
 }
 
 .char-card__name {
