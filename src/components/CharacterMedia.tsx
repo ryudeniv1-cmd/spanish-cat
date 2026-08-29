@@ -17,7 +17,7 @@ import {
 import silhouetteUrl from '../presets/siluet.png';
 
 
-// ===== снятие чёрного фона =====
+// ===== снятие чёрного фона и подгонка фигуры =====
 //
 // Раньше фон снимал SVG-фильтр из index.html (filter: url(#luma-key)).
 // На десктопе он работает, но WebView к <video> SVG-фильтры не применяет,
@@ -25,6 +25,11 @@ import silhouetteUrl from '../presets/siluet.png';
 // считаем сами: кадр уходит текстурой в WebGL, шейдер переносит яркость
 // в альфу, результат рисуется в <canvas> поверх скрытого ролика. Это больше
 // не зависит от того, что умеет конкретный WebView.
+//
+// Тот же проход ставит фигуру в кадр: габарит персонажа меряется один раз
+// на ролик, и шейдер рисует кадр так, чтобы фигура заняла заданную долю
+// блока и встала по его центру. Иначе персонажи из разных роликов выходят
+// разного роста и смещёнными — запас по краям кадра у всех свой.
 
 const VERT = `
 attribute vec2 a;
@@ -53,8 +58,137 @@ void main() {
   gl_FragColor = vec4(texture2D(tex, uv).rgb * a, a);
 }`;
 
+/** Габарит фигуры в кадре: доли ширины и высоты ролика. */
+interface Box {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  /** ось фигуры — не середина габарита, см. measure() */
+  cx: number;
+}
+
+/**
+ * Куда ставить фигуру внутри блока — доли его размеров: центр по
+ * горизонтали, линия подошв, рост и предел ширины. Значения читаются из
+ * CSS-переменных --fig-cx / --fig-base / --fig-h / --fig-w, поэтому вся
+ * раскладка персонажа остаётся в styles.css.
+ */
+interface Framing {
+  cx: number;
+  base: number;
+  height: number;
+  width: number;
+}
+
+const FRAMING: Framing = { cx: 0.5, base: 0.94, height: 0.86, width: 0.92 };
+
+function readFraming(el: Element): Framing {
+  const st = getComputedStyle(el);
+  const num = (name: string, fallback: number): number => {
+    const v = parseFloat(st.getPropertyValue(name));
+    return Number.isFinite(v) ? v : fallback;
+  };
+  return {
+    cx: num('--fig-cx', FRAMING.cx),
+    base: num('--fig-base', FRAMING.base),
+    height: num('--fig-h', FRAMING.height),
+    width: num('--fig-w', FRAMING.width),
+  };
+}
+
+// ===== габарит фигуры =====
+//
+// Ролики сняты с разным запасом: где-то фигура во весь кадр, где-то мельче
+// и смещена вбок. Чтобы персонажи выглядели одного роста и стояли по центру
+// блока, габарит меряем — один раз на ролик. Кадр уходит в маленький холст,
+// дальше ищем крайние пиксели, которые ключ оставит непрозрачными.
+
+const PROBE_W = 128;
+const PROBE_H = 160;
+const MAX_TRIES = 20; // фигуры в кадре может не оказаться — не мерить вечно
+
+let probe: CanvasRenderingContext2D | null | undefined;
+
+function probeCtx(): CanvasRenderingContext2D | null {
+  if (probe === undefined) {
+    const c = document.createElement('canvas');
+    c.width = PROBE_W;
+    c.height = PROBE_H;
+    probe = c.getContext('2d', { willReadFrequently: true });
+  }
+  return probe;
+}
+
+/** null — кадра ещё нет или фигуру не видно. */
+function measure(v: HTMLVideoElement): Box | null {
+  const ctx = probeCtx();
+  if (!ctx || v.readyState < 2 || !v.videoWidth) return null;
+  let d: Uint8ClampedArray;
+  try {
+    ctx.clearRect(0, 0, PROBE_W, PROBE_H);
+    ctx.drawImage(v, 0, 0, PROBE_W, PROBE_H);
+    d = ctx.getImageData(0, 0, PROBE_W, PROBE_H).data;
+  } catch {
+    return null;
+  }
+  const luma = (i: number) => d[i] * 0.33 + d[i + 1] * 0.5 + d[i + 2] * 0.17;
+  // уровень чёрного берём по углам, как в шейдере: у limited range он не ноль
+  const corner = (x: number, y: number) => luma((y * PROBE_W + x) * 4);
+  const black = Math.min(
+    corner(1, 1),
+    corner(PROBE_W - 2, 1),
+    corner(1, PROBE_H - 2),
+    corner(PROBE_W - 2, PROBE_H - 2),
+  );
+  const cut = black + 10; // запас на шум сжатия по контуру
+  const cols = new Int32Array(PROBE_W);
+  const rows = new Int32Array(PROBE_H);
+  for (let y = 0; y < PROBE_H; y++) {
+    for (let x = 0; x < PROBE_W; x++) {
+      if (luma((y * PROBE_W + x) * 4) > cut) {
+        cols[x]++;
+        rows[y]++;
+      }
+    }
+  }
+  // одиночный пиксель в строке — шум, а не фигура
+  const span = (hits: Int32Array): [number, number] | null => {
+    let lo = -1;
+    let hi = -1;
+    for (let i = 0; i < hits.length; i++) {
+      if (hits[i] < 2) continue;
+      if (lo < 0) lo = i;
+      hi = i;
+    }
+    return lo < 0 ? null : [lo, hi + 1];
+  };
+  const xs = span(cols);
+  const ys = span(rows);
+  if (!xs || !ys) return null;
+  // Ось фигуры — не середина габарита: вытянутый в сторону клинок утащил бы
+  // её за собой, и тело встало бы вбок. Берём столбец, левее которого
+  // половина непрозрачных пикселей: тонкий клинок весит мало, ось на теле.
+  let total = 0;
+  for (let i = xs[0]; i < xs[1]; i++) total += cols[i];
+  let acc = 0;
+  let mid = xs[0];
+  for (let i = xs[0]; i < xs[1]; i++) {
+    acc += cols[i];
+    mid = i;
+    if (acc * 2 >= total) break;
+  }
+  return {
+    x0: xs[0] / PROBE_W,
+    x1: xs[1] / PROBE_W,
+    y0: ys[0] / PROBE_H,
+    y1: ys[1] / PROBE_H,
+    cx: (mid + 0.5) / PROBE_W,
+  };
+}
+
 interface Keyer {
-  draw(v: HTMLVideoElement): void;
+  draw(v: HTMLVideoElement, box: Box | null, f: Framing): void;
   dispose(): void;
 }
 
@@ -68,7 +202,14 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
 
 /** null — WebGL недоступен, вызывающий откатится на прежний путь. */
 function createKeyer(canvas: HTMLCanvasElement): Keyer | null {
-  const gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false });
+  // preserveDrawingBuffer: холст персонажа читает сцена Today, когда рисует
+  // отражение, — это происходит в её кадре, уже после нашего.
+  const gl = canvas.getContext('webgl', {
+    alpha: true,
+    antialias: false,
+    depth: false,
+    preserveDrawingBuffer: true,
+  });
   if (!gl) return null;
   const vs = compile(gl, gl.VERTEX_SHADER, VERT);
   const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
@@ -95,7 +236,7 @@ function createKeyer(canvas: HTMLCanvasElement): Keyer | null {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   return {
-    draw(v) {
+    draw(v, box, f) {
       const vw = v.videoWidth;
       const vh = v.videoHeight;
       if (!vw || !vh) return;
@@ -110,11 +251,32 @@ function createKeyer(canvas: HTMLCanvasElement): Keyer | null {
       gl.viewport(0, 0, cw, ch);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
-      // то же, что object-fit: contain и object-position: center bottom
-      const scale = Math.min(cw / vw, ch / vh);
-      const dw = Math.round(vw * scale);
-      const dh = Math.round(vh * scale);
-      gl.viewport(Math.round((cw - dw) / 2), 0, dw, dh);
+
+      // Кадр рисуется целиком, но так, чтобы измеренный габарит фигуры сел
+      // в заданные доли блока: у всех роликов один рост и общий центр.
+      // Пока габарита нет — прежнее contain / center bottom.
+      let dw: number;
+      let dh: number;
+      let x: number;
+      let y: number;
+      if (box) {
+        const s = Math.min(
+          (f.height * ch) / ((box.y1 - box.y0) * vh),
+          (f.width * cw) / ((box.x1 - box.x0) * vw),
+        );
+        dw = vw * s;
+        dh = vh * s;
+        x = f.cx * cw - box.cx * dw;
+        // подошвы на f.base; viewport отсчитывает y от нижнего края холста
+        y = ch - f.base * ch + box.y1 * dh - dh;
+      } else {
+        const s = Math.min(cw / vw, ch / vh);
+        dw = vw * s;
+        dh = vh * s;
+        x = (cw - dw) / 2;
+        y = 0;
+      }
+      gl.viewport(Math.round(x), Math.round(y), Math.round(dw), Math.round(dh));
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
@@ -129,6 +291,12 @@ function createKeyer(canvas: HTMLCanvasElement): Keyer | null {
 interface KeyState {
   keyer: Keyer;
   canvas: HTMLCanvasElement;
+  /** обёртка: с неё читаются --fig-* */
+  host: HTMLElement;
+  frame: Framing;
+  box: Box | null;
+  src: string;
+  tries: number;
   at: number;
   w: number;
   h: number;
@@ -143,18 +311,53 @@ function pump(): void {
     if (v.readyState < 2) continue;
     const w = s.canvas.clientWidth;
     const h = s.canvas.clientHeight;
+    // блок сменил размер — доли могли переехать вместе с медиазапросом
+    if (w !== s.w || h !== s.h) s.frame = readFraming(s.host);
+    if (s.src !== v.currentSrc) {
+      s.src = v.currentSrc;
+      s.box = null;
+      s.tries = 0;
+    }
+    if (!s.box && s.tries < MAX_TRIES) {
+      s.tries++;
+      s.box = measure(v);
+      if (s.box) s.at = -1; // габарит появился — перерисовать даже на паузе
+    }
     if (v.paused && s.at === v.currentTime && s.w === w && s.h === h) continue;
-    s.keyer.draw(v);
+    s.keyer.draw(v, s.box, s.frame);
     s.at = v.currentTime;
     s.w = w;
     s.h = h;
   }
 }
 
-function keyOn(v: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
-  const keyer = createKeyer(canvas);
+// Освобождение контекста отложено на макрозадачу. StrictMode в разработке
+// гасит эффект и тут же заводит его снова на том же <canvas>: если потерять
+// контекст сразу, второй проход получит мёртвый — createKeyer вернёт null,
+// и вместо ключа всюду будет запасной путь. Потерянный контекст назад не
+// вернуть, поэтому ждём: холст завёлся снова — отдаём ему прежний ключ.
+const parked = new Map<HTMLCanvasElement, { keyer: Keyer; timer: number }>();
+
+function keyOn(v: HTMLVideoElement, canvas: HTMLCanvasElement, host: HTMLElement): boolean {
+  const held = parked.get(canvas);
+  if (held) {
+    clearTimeout(held.timer);
+    parked.delete(canvas);
+  }
+  const keyer = held ? held.keyer : createKeyer(canvas);
   if (!keyer) return false;
-  keyed.set(v, { keyer, canvas, at: -1, w: 0, h: 0 });
+  keyed.set(v, {
+    keyer,
+    canvas,
+    host,
+    frame: readFraming(host),
+    box: null,
+    src: '',
+    tries: 0,
+    at: -1,
+    w: 0,
+    h: 0,
+  });
   if (!pumping) pumping = requestAnimationFrame(pump);
   return true;
 }
@@ -162,8 +365,12 @@ function keyOn(v: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
 function keyOff(v: HTMLVideoElement): void {
   const s = keyed.get(v);
   if (!s) return;
-  s.keyer.dispose();
   keyed.delete(v);
+  const timer = window.setTimeout(() => {
+    parked.delete(s.canvas);
+    s.keyer.dispose();
+  }, 0);
+  parked.set(s.canvas, { keyer: s.keyer, timer });
   if (keyed.size === 0 && pumping) {
     cancelAnimationFrame(pumping);
     pumping = 0;
@@ -173,7 +380,8 @@ function keyOff(v: HTMLVideoElement): void {
 /**
  * Ролик со снятым фоном. Наружу ведёт себя как <video>: ref отдаёт сам
  * элемент, поэтому пул, IntersectionObserver и кроссфейд работают как прежде.
- * Класс раскладки уходит на обёртку, ролик и холст занимают её целиком.
+ * Класс раскладки уходит на обёртку — она задаёт и блок, и доли --fig-*,
+ * по которым шейдер вписывает фигуру; ролик и холст занимают её целиком.
  */
 const KeyedVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement>>(
   function KeyedVideo({ className, ...rest }, ref) {
@@ -189,20 +397,9 @@ const KeyedVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoEle
       const c = cRef.current;
       const box = boxRef.current;
       if (!v || !c || !box) return;
-
-      // Ролик внутри обёртки спозиционирован абсолютно и её размер не
-      // задаёт. Там, где раскладка считала ширину из высоты по пропорциям
-      // видео, пропорции переносим на обёртку.
-      const ratio = () => {
-        if (v.videoWidth) box.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
-      };
-      if (v.readyState >= 1) ratio();
-      v.addEventListener('loadedmetadata', ratio);
-
-      const keying = keyOn(v, c);
+      const keying = keyOn(v, c, box);
       if (!keying) setRaw(true);
       return () => {
-        v.removeEventListener('loadedmetadata', ratio);
         if (keying) keyOff(v);
       };
     }, []);

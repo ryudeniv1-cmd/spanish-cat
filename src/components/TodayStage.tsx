@@ -8,7 +8,7 @@
 //
 // Свечение набирается несколькими проходами с 'lighter': это дешевле, чем
 // filter: blur() на весь холст, и не срывает 60 fps на телефоне.
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { Blade } from '../theme/blades';
 
 type RGB = [number, number, number];
@@ -141,6 +141,10 @@ interface Props {
   children?: ReactNode;
 }
 
+/** Ось платформы, доля ширины сцены. Ролик встаёт на неё же: сцена отдаёт
+    эту долю в --fig-cx, а фигуру по ней центрует ключ (CharacterMedia). */
+const CHAR_X = 0.66;
+
 export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLCanvasElement>(null);
@@ -162,9 +166,6 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
     const particles: Particle[] = [];
     const sparks: Spark[] = [];
     let sparkDebt = 0;
-    const refl = document.createElement('canvas');
-    const rctx = refl.getContext('2d');
-
     let w = 0;
     let h = 0;
     let dpr = 1;
@@ -175,71 +176,6 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
     let tick = 0;
     let accent: RGB = [79, 216, 255];
     let accent2: RGB = [159, 243, 236];
-    let charX = 0;
-    let groundY = 0;
-
-    // Куда именно ролик поставил фигуру, знает только сам кадр: у клипов
-    // разный запас снизу и по бокам. Меряем габарит один раз на ролик и
-    // сдвигаем видео так, чтобы подошвы легли на центр эллипса, а середина
-    // фигуры совпала с осью платформы.
-    const aligned = new WeakMap<HTMLVideoElement, { src: string; cx: number; by: number }>();
-
-    const applyAlign = (v: HTMLVideoElement, info: { cx: number; by: number }) => {
-      const elW = v.offsetWidth;
-      const elH = v.offsetHeight;
-      if (!elW || !elH || !v.videoWidth) return;
-      const ar = v.videoWidth / v.videoHeight;
-      let dw = elW;
-      let dh = elW / ar;
-      if (dh > elH) {
-        dh = elH;
-        dw = elH * ar;
-      }
-      const ox = v.offsetLeft + (elW - dw) / 2; // object-position: center
-      const oy = v.offsetTop + (elH - dh); // ...bottom
-      const dx = charX - (ox + info.cx * dw);
-      const dy = groundY - (oy + info.by * dh);
-      v.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
-    };
-
-    const alignVideo = (v: HTMLVideoElement) => {
-      if (!rctx || v.readyState < 2 || !v.videoWidth) return;
-      const cached = aligned.get(v);
-      if (cached && cached.src === v.currentSrc) {
-        applyAlign(v, cached);
-        return;
-      }
-      rctx.clearRect(0, 0, refl.width, refl.height);
-      rctx.drawImage(v, 0, 0, refl.width, refl.height);
-      let d: Uint8ClampedArray;
-      try {
-        d = rctx.getImageData(0, 0, refl.width, refl.height).data;
-      } catch {
-        return; // кадр ещё не готов
-      }
-      let minX = refl.width;
-      let maxX = -1;
-      let maxY = -1;
-      for (let y = 0; y < refl.height; y++) {
-        for (let x = 0; x < refl.width; x++) {
-          const i = (y * refl.width + x) * 4;
-          if (d[i] + d[i + 1] + d[i + 2] > 96) {
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-          }
-        }
-      }
-      if (maxX <= minX || maxY < 0) return;
-      const info = {
-        src: v.currentSrc,
-        cx: (minX + maxX + 1) / 2 / refl.width,
-        by: (maxY + 1) / refl.height,
-      };
-      aligned.set(v, info);
-      applyAlign(v, info);
-    };
-
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       w = box.clientWidth;
@@ -248,8 +184,6 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
         c.width = Math.round(w * dpr);
         c.height = Math.round(h * dpr);
       }
-      refl.width = 96;
-      refl.height = 128;
     };
     resize();
 
@@ -640,27 +574,31 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       bctx.clearRect(0, 0, w, h);
       fctx.clearRect(0, 0, w, h);
 
-      groundY = h * groundFrac;
+      const groundY = h * groundFrac;
       const saberX = w * 0.21;
-      charX = w * 0.66;
+      const charX = w * CHAR_X;
       const rx = Math.min(w * 0.3, h * 0.4);
       const ry = rx * 0.28;
 
-      for (const v of box.querySelectorAll<HTMLVideoElement>('video.hero-video')) alignVideo(v);
-
-      // отражение фигуры на «полу»
-      const vid = box.querySelector<HTMLVideoElement>('video.hero-video[style*="opacity: 1"]');
-      if (rctx && vid && vid.readyState >= 2) {
-        rctx.clearRect(0, 0, refl.width, refl.height);
-        rctx.drawImage(vid, 0, 0, refl.width, refl.height);
+      // Отражение фигуры на «полу»: зеркалим относительно groundY уже
+      // очищенный от фона холст персонажа. Совмещать ничего не нужно —
+      // ролик и так стоит подошвами на этой линии, а вместе с ним едет
+      // и параллакс: обе стороны висят на одной scroll-timeline.
+      let reflected = false;
+      for (const el of box.querySelectorAll<HTMLElement>('.hero-video')) {
+        const canvas = el.querySelector('canvas');
+        const a = Number(getComputedStyle(el).opacity);
+        if (!canvas || !canvas.width || !(a > 0.01)) continue;
         bctx.save();
-        bctx.globalAlpha = 0.15;
-        bctx.translate(charX, groundY);
+        bctx.globalCompositeOperation = 'lighter';
+        bctx.globalAlpha = 0.16 * a;
+        bctx.translate(0, groundY * 2);
         bctx.scale(1, -1);
-        const rw = rx * 1.5;
-        const rh = rw * (refl.height / refl.width);
-        bctx.drawImage(refl, -rw / 2, -rh, rw, rh);
+        bctx.drawImage(canvas, 0, 0, w, h);
         bctx.restore();
+        reflected = true;
+      }
+      if (reflected) {
         // быстрое затухание книзу
         bctx.save();
         bctx.globalCompositeOperation = 'destination-out';
@@ -740,7 +678,11 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
   }, [groundFrac]);
 
   return (
-    <div className="stage" ref={boxRef}>
+    <div
+      className="stage"
+      ref={boxRef}
+      style={{ '--fig-cx': CHAR_X, '--fig-base': groundFrac } as CSSProperties}
+    >
       <canvas ref={backRef} className="stage__c" aria-hidden="true" />
       {children}
       <canvas ref={frontRef} className="stage__c stage__c--front" aria-hidden="true" />

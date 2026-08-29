@@ -544,15 +544,15 @@ button {
   text-shadow: 0 0 12px var(--accent-glow);
 }
 
-/* Персонаж стоит подошвами на центре эллипса: низ ролика = «земля».
-   Чёрный фон снимает ключ по яркости в шейдере (см. CharacterMedia.tsx);
-   класс лежит на обёртке, внутри неё ролик и холст. */
+/* Обёртка ролика лежит на всей сцене, фигуру внутри ставит ключ
+   (см. CharacterMedia.tsx): чёрный фон снимает шейдер, он же вписывает
+   персонажа по долям --fig-*. Ось и линию земли задаёт сама сцена
+   (--fig-cx / --fig-base), поэтому подошвы всегда на центре эллипса. */
 .hero-video {
   position: absolute;
-  left: 34%;
-  right: 0;
-  bottom: 16%;
-  height: 78%;
+  inset: 0;
+  --fig-h: 0.66;
+  --fig-w: 0.46;
   opacity: 0;
   transition: opacity 0.42s linear;
   pointer-events: none;
@@ -820,14 +820,6 @@ button {
 .review-row__arrow svg {
   width: 100%;
   height: 100%;
-}
-
-/* На узком экране персонаж крупнее, меч — уже: холст рисует по долям
-   ширины, поэтому двигать нужно только ролик. */
-@media (max-width: 400px) {
-  .hero-video {
-    left: 30%;
-  }
 }
 
 .progress-ring {
@@ -1566,9 +1558,20 @@ button {
   isolation: isolate;
 }
 
-/* Фигура занимает ~80% высоты блока и стоит на нижнем крае,
-   вокруг остаётся воздух; contain — чтобы её не обрезало по краям. */
-.char-video,
+/* Ролик занимает блок целиком, а фигуру в него вписывает ключ
+   (см. CharacterMedia.tsx): он меряет габарит персонажа в кадре и ставит
+   его по этим долям блока. Поэтому у роликов с разным запасом по краям
+   всё равно один рост, общий центр и одна линия подошв. */
+.char-video {
+  position: absolute;
+  inset: 0;
+  --fig-cx: 0.5;
+  --fig-base: 0.94;
+  --fig-h: 0.86;
+  --fig-w: 0.92;
+}
+
+/* силуэт — обычная картинка, её вписывает сам CSS */
 .char-silhouette {
   position: absolute;
   left: 8%;
@@ -1648,20 +1651,19 @@ button {
 
 /* полноэкранный просмотр персонажа */
 .char-view__stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 4px 0 10px;
 }
 
 .char-view__video {
-  position: relative;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-  display: block;
+  position: absolute;
+  inset: 0;
+  --fig-cx: 0.5;
+  --fig-base: 0.97;
+  --fig-h: 0.95;
+  --fig-w: 0.94;
 }
 
 /* сцена открытия */
