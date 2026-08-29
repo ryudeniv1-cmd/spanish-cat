@@ -5,9 +5,224 @@
 // сверху вниз, остальные стоят на паузе. При prefers-reduced-motion
 // ролик не запускается вовсе — показывается первый кадр.
 import { useReducedMotion } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type VideoHTMLAttributes,
+} from 'react';
 // через сборщик, а не абсолютным путём: иначе на GitHub Pages потеряется base
 import silhouetteUrl from '../presets/siluet.png';
+
+
+// ===== снятие чёрного фона =====
+//
+// Раньше фон снимал SVG-фильтр из index.html (filter: url(#luma-key)).
+// На десктопе он работает, но WebView к <video> SVG-фильтры не применяет,
+// и на телефоне вместо фигуры оставался чёрный прямоугольник. Поэтому ключ
+// считаем сами: кадр уходит текстурой в WebGL, шейдер переносит яркость
+// в альфу, результат рисуется в <canvas> поверх скрытого ролика. Это больше
+// не зависит от того, что умеет конкретный WebView.
+
+const VERT = `
+attribute vec2 a;
+varying vec2 uv;
+void main() {
+  uv = vec2((a.x + 1.0) * 0.5, (1.0 - a.y) * 0.5);
+  gl_Position = vec4(a, 0.0, 1.0);
+}`;
+
+// Уровень чёрного берётся из углов кадра — там заведомо фон. Так ключ
+// одинаково срабатывает и когда декодер отдал чистый ноль, и когда отдал
+// limited range (чёрный = 16). Пологий участок у порога сохраняет сглаженный
+// край фигуры, иначе по контуру идёт тёмная кайма.
+const FRAG = `
+precision mediump float;
+uniform sampler2D tex;
+varying vec2 uv;
+const vec3 W = vec3(0.33, 0.5, 0.17);
+float luma(vec2 p) { return dot(texture2D(tex, p).rgb, W); }
+void main() {
+  float black = min(
+    min(luma(vec2(0.02, 0.02)), luma(vec2(0.98, 0.02))),
+    min(luma(vec2(0.02, 0.98)), luma(vec2(0.98, 0.98)))
+  );
+  float a = clamp((luma(uv) - black - 0.004) / 0.016, 0.0, 1.0);
+  gl_FragColor = vec4(texture2D(tex, uv).rgb * a, a);
+}`;
+
+interface Keyer {
+  draw(v: HTMLVideoElement): void;
+  dispose(): void;
+}
+
+function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader | null {
+  const sh = gl.createShader(type);
+  if (!sh) return null;
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null;
+}
+
+/** null — WebGL недоступен, вызывающий откатится на прежний путь. */
+function createKeyer(canvas: HTMLCanvasElement): Keyer | null {
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false });
+  if (!gl) return null;
+  const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
+  const prog = gl.createProgram();
+  if (!vs || !fs || !prog) return null;
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const at = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(at);
+  gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  return {
+    draw(v) {
+      const vw = v.videoWidth;
+      const vh = v.videoHeight;
+      if (!vw || !vh) return;
+      // холст под фактический размер на экране; выше 2x смысла нет
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cw = Math.max(1, Math.round(canvas.clientWidth * dpr));
+      const ch = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
+      gl.viewport(0, 0, cw, ch);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // то же, что object-fit: contain и object-position: center bottom
+      const scale = Math.min(cw / vw, ch / vh);
+      const dw = Math.round(vw * scale);
+      const dh = Math.round(vh * scale);
+      gl.viewport(Math.round((cw - dw) / 2), 0, dw, dh);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+    dispose() {
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    },
+  };
+}
+
+// Один общий кадровый цикл на все ролики: стоящий на паузе не перерисовываем,
+// пока не сменился кадр или размер холста.
+interface KeyState {
+  keyer: Keyer;
+  canvas: HTMLCanvasElement;
+  at: number;
+  w: number;
+  h: number;
+}
+
+const keyed = new Map<HTMLVideoElement, KeyState>();
+let pumping = 0;
+
+function pump(): void {
+  pumping = requestAnimationFrame(pump);
+  for (const [v, s] of keyed) {
+    if (v.readyState < 2) continue;
+    const w = s.canvas.clientWidth;
+    const h = s.canvas.clientHeight;
+    if (v.paused && s.at === v.currentTime && s.w === w && s.h === h) continue;
+    s.keyer.draw(v);
+    s.at = v.currentTime;
+    s.w = w;
+    s.h = h;
+  }
+}
+
+function keyOn(v: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+  const keyer = createKeyer(canvas);
+  if (!keyer) return false;
+  keyed.set(v, { keyer, canvas, at: -1, w: 0, h: 0 });
+  if (!pumping) pumping = requestAnimationFrame(pump);
+  return true;
+}
+
+function keyOff(v: HTMLVideoElement): void {
+  const s = keyed.get(v);
+  if (!s) return;
+  s.keyer.dispose();
+  keyed.delete(v);
+  if (keyed.size === 0 && pumping) {
+    cancelAnimationFrame(pumping);
+    pumping = 0;
+  }
+}
+
+/**
+ * Ролик со снятым фоном. Наружу ведёт себя как <video>: ref отдаёт сам
+ * элемент, поэтому пул, IntersectionObserver и кроссфейд работают как прежде.
+ * Класс раскладки уходит на обёртку, ролик и холст занимают её целиком.
+ */
+const KeyedVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<HTMLVideoElement>>(
+  function KeyedVideo({ className, ...rest }, ref) {
+    const boxRef = useRef<HTMLSpanElement>(null);
+    const vRef = useRef<HTMLVideoElement>(null);
+    const cRef = useRef<HTMLCanvasElement>(null);
+    const [raw, setRaw] = useState(false);
+
+    useImperativeHandle(ref, () => vRef.current!, []);
+
+    useEffect(() => {
+      const v = vRef.current;
+      const c = cRef.current;
+      const box = boxRef.current;
+      if (!v || !c || !box) return;
+
+      // Ролик внутри обёртки спозиционирован абсолютно и её размер не
+      // задаёт. Там, где раскладка считала ширину из высоты по пропорциям
+      // видео, пропорции переносим на обёртку.
+      const ratio = () => {
+        if (v.videoWidth) box.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
+      };
+      if (v.readyState >= 1) ratio();
+      v.addEventListener('loadedmetadata', ratio);
+
+      const keying = keyOn(v, c);
+      if (!keying) setRaw(true);
+      return () => {
+        v.removeEventListener('loadedmetadata', ratio);
+        if (keying) keyOff(v);
+      };
+    }, []);
+
+    return (
+      <span
+        ref={boxRef}
+        className={`keyed ${className ?? 'char-video'}${raw ? ' keyed--raw' : ''}`}
+      >
+        <video ref={vRef} className="keyed__src" {...rest} />
+        <canvas ref={cRef} className="keyed__out" aria-hidden="true" />
+      </span>
+    );
+  },
+);
+
+/** Кроссфейд идёт по обёртке: на ней лежит класс с переходом. */
+function fade(v: HTMLVideoElement, to: 0 | 1): void {
+  (v.parentElement ?? v).style.opacity = String(to);
+}
 
 const MAX_PLAYING = 4;
 
@@ -147,9 +362,9 @@ export function IdleVideo({
   if (!src) return null;
 
   return (
-    <video
+    <KeyedVideo
       ref={ref}
-      className={className ?? 'char-video'}
+      className={className}
       src={src}
       autoPlay={!reduced && standalone}
       loop={!holdMs}
@@ -222,8 +437,8 @@ export function IdleCycler({ sources, className }: { sources: string[]; classNam
 
     let frontSrc = pick();
     a.src = frontSrc;
-    a.style.opacity = '1';
-    b.style.opacity = '0';
+    fade(a, 1);
+    fade(b, 0);
 
     if (reduced) {
       showFirstFrame(a);
@@ -248,8 +463,8 @@ export function IdleCycler({ sources, className }: { sources: string[]; classNam
       const cur = el(front);
       const nxt = el(1 - front);
       void nxt.play().catch(() => undefined);
-      nxt.style.opacity = '1';
-      cur.style.opacity = '0';
+      fade(nxt, 1);
+      fade(cur, 0);
       front = 1 - front;
       frontSrc = backSrc;
       // освободившийся элемент готовит следующий ролик уже под кроссфейдом
@@ -283,8 +498,8 @@ export function IdleCycler({ sources, className }: { sources: string[]; classNam
 
   return (
     <>
-      <video ref={aRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
-      <video ref={bRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
+      <KeyedVideo ref={aRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
+      <KeyedVideo ref={bRef} className={className} muted playsInline preload="auto" disablePictureInPicture aria-hidden="true" />
     </>
   );
 }

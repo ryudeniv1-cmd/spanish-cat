@@ -545,44 +545,18 @@ button {
 }
 
 /* Персонаж стоит подошвами на центре эллипса: низ ролика = «земля».
-   Чёрный фон снимается ключом по яркости (#luma-key в index.html), а не
-   смешиванием: lighten просвечивал фоном сквозь тёмную одежду. */
+   Чёрный фон снимает ключ по яркости в шейдере (см. CharacterMedia.tsx);
+   класс лежит на обёртке, внутри неё ролик и холст. */
 .hero-video {
   position: absolute;
   left: 34%;
   right: 0;
   bottom: 16%;
   height: 78%;
-  object-fit: contain;
-  object-position: center bottom;
-  filter: url(#luma-key);
   opacity: 0;
   transition: opacity 0.42s linear;
   pointer-events: none;
   z-index: 1;
-}
-
-/* ВРЕМЕННО: переключатель клинков для просмотра */
-.blade-switch {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  margin: 0 0 14px;
-}
-
-.blade-switch__b {
-  padding: 6px 0;
-  border-radius: 9px;
-  border: 1px solid var(--sw);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--sw);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.blade-switch__b.is-on {
-  background: var(--sw);
-  color: #080c14;
 }
 
 /* --- прогресс до следующего клинка --- */
@@ -1613,10 +1587,34 @@ button {
   background: radial-gradient(120% 90% at 50% 100%, rgba(255, 255, 255, 0.03), transparent 70%), #0a0f1d;
 }
 
-/* Тот же ключ, что и на Today: у тёмных персонажей смешивание давало
-   полупрозрачность. */
-.char-video {
+/* Ролик прозрачен, на экране холст с уже снятым фоном. Сам ролик остаётся
+   в раскладке: у скрытого видео WebView может придержать декодирование,
+   у прозрачного — нет. */
+.keyed__src,
+.keyed__out {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.keyed__src {
+  object-fit: contain;
+  object-position: center bottom;
+  opacity: 0;
+}
+
+/* Без WebGL остаётся прежний путь: сам ролик и SVG-фильтр из index.html.
+   Он работает не везде, но это лучше, чем ничего. */
+.keyed--raw .keyed__src {
+  opacity: 1;
   filter: url(#luma-key);
+}
+
+.keyed--raw .keyed__out {
+  display: none;
 }
 
 /* siluet.png непрозрачный — тёмная фигура со свечением на тёмном фоне.
@@ -1659,13 +1657,11 @@ button {
 }
 
 .char-view__video {
+  position: relative;
   height: 100%;
   width: auto;
   max-width: 100%;
-  object-fit: contain;
-  border-radius: 20px;
   display: block;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
 }
 
 /* сцена открытия */

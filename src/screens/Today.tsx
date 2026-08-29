@@ -2,15 +2,13 @@
 // задание на сегодня, повторение и карта сектора.
 // Вся палитра экрана идёт от --accent, то есть от экипированного клинка.
 import { motion } from 'framer-motion';
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore, useStoreVersion } from '../AppContext';
 import { CHARACTERS, clipUrls, isCharacterUnlocked } from '../data/characters';
 import { LEVEL_BOUNDS, WORDS } from '../data/words';
 import { haptic } from '../telegram';
 import { BLADES, bladeById, nextBlade, unlockedBlades } from '../theme/blades';
-import { applyAccent } from '../theme/accent';
-import { DEBUG_BLADES } from '../debug';
 import { IdleCycler } from '../components/CharacterMedia';
 import { TodayStage } from '../components/TodayStage';
 import { MiniMap } from '../components/MiniMap';
@@ -74,9 +72,7 @@ export function Today() {
 
   const queue = store.queueIds();
   const due = store.dueList();
-  const realLearned = store.learnedCount();
-  // ВРЕМЕННО: в режиме просмотра все пороги считаются достигнутыми
-  const learned = DEBUG_BLADES ? BLADES[BLADES.length - 1].threshold : realLearned;
+  const learned = store.learnedCount();
   const unlocked = unlockedBlades(learned);
   const equipped = bladeById(store.meta.equipped_blade) ?? unlocked[unlocked.length - 1];
   const next = nextBlade(learned);
@@ -145,26 +141,6 @@ export function Today() {
           </div>
         </div>
       </div>
-
-      {/* ВРЕМЕННО: переключатель для просмотра всех клинков */}
-      {DEBUG_BLADES && (
-        <div className="blade-switch">
-          {BLADES.map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              className={`blade-switch__b ${equipped?.id === b.id ? 'is-on' : ''}`}
-              style={{ '--sw': b.accent } as CSSProperties}
-              onClick={() => {
-                store.equipBlade(b.id);
-                applyAccent(b);
-              }}
-            >
-              {b.tier}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* ===== прогресс до следующего клинка ===== */}
       <motion.div custom={0} variants={stagger} initial="hidden" animate="show">
