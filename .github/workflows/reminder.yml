@@ -1,0 +1,60 @@
+# Ежедневное напоминание в Telegram (без сервера).
+#
+# Cron задаётся в UTC. Чтобы перевести местное время в UTC:
+#   нужное местное время МИНУС смещение часового пояса.
+# Примеры для 10:00 утра по местному времени:
+#   Москва (UTC+3):        10 - 3 = 7  ->  "0 7 * * *"
+#   Мадрид, лето (UTC+2):  10 - 2 = 8  ->  "0 8 * * *"
+#   Мадрид, зима (UTC+1):  10 - 1 = 9  ->  "0 9 * * *"
+# GitHub может запускать cron с задержкой до нескольких десятков минут — это нормально.
+#
+# Секреты (Settings -> Secrets and variables -> Actions):
+#   BOT_TOKEN — токен бота из @BotFather
+#   CHAT_ID   — твой Telegram ID (показывается на экране «Системы» в приложении)
+name: Daily reminder
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 10:00 по Москве (UTC+3); поменяй под своё время
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Send Telegram reminder
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          APP_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -H 'Content-Type: application/json' \
+            -d "$(cat <<JSON
+          {
+            "chat_id": "${CHAT_ID}",
+            "text": "Мостик ждёт: сегодня новые слова и повторение",
+            "reply_markup": {
+              "inline_keyboard": [[
+                { "text": "Открыть", "web_app": { "url": "${APP_URL}" } }
+              ]]
+            }
+          }
+          JSON
+          )"
+
+      # Коммит служебного файла, чтобы GitHub не отключил расписание
+      # за 60 дней «неактивности» репозитория.
+      - name: Keep repository active
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .last-reminder
+          git config user.name "reminder-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .last-reminder
+          git commit -m "chore: reminder heartbeat" || exit 0
+          git push
