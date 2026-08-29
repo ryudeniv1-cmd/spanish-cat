@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // На GitHub Actions переменная GITHUB_REPOSITORY = "owner/repo" —
@@ -14,8 +14,23 @@ const buildId = [
   (process.env.GITHUB_SHA ?? 'local').slice(0, 7),
 ].join(' · ');
 
+// version.json рядом с бандлом: по нему приложение на старте понимает,
+// что открыт закешированный index.html от прошлой сборки (см. src/version.ts).
+function buildVersionFile(): Plugin {
+  return {
+    name: 'build-version-file',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ build: buildId }),
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), buildVersionFile()],
   define: { __BUILD_ID__: JSON.stringify(buildId) },
   base: repo ? `/${repo}/` : './',
   server: {

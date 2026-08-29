@@ -7,6 +7,7 @@ import { Background } from './components/Background';
 import { AppStore } from './store';
 import { localAdapter, telegramAdapter, type StorageAdapter } from './storage/adapter';
 import { cloudStorageAvailable, initTelegramUi, isInTelegram, tg } from './telegram';
+import { watchForUpdates } from './version';
 
 function Gate() {
   return (
@@ -23,6 +24,7 @@ function Gate() {
 }
 
 initTelegramUi();
+watchForUpdates();
 
 let adapter: StorageAdapter | null = null;
 if (isInTelegram() && cloudStorageAvailable()) {

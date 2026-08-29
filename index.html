@@ -5,15 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#070A12" />
     <!--
-      GitHub Pages отдаёт index.html с Cache-Control: max-age=600 и своих
-      заголовков не даёт настроить, а WebView Telegram кеширует ещё жёстче:
-      после деплоя пользователь может минутами видеть старую версию. Сами
-      бандлы адресуются по хешу, поэтому достаточно, чтобы не кешировалась
-      только эта страница.
+      Заголовками кеша тут управлять нельзя: GitHub Pages отдаёт index.html
+      с Cache-Control: max-age=600, а <meta http-equiv="Cache-Control"> браузеры
+      игнорируют — на HTTP-кеш он не влияет. Свежесть проверяет сам бандл:
+      см. src/version.ts (сверка с version.json и перезагрузка по ?v=).
     -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
     <title>Today · Испанский</title>
     <link
       rel="icon"
