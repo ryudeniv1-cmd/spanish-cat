@@ -15,7 +15,7 @@ name: Daily reminder
 
 on:
   schedule:
-    - cron: '0 7 * * *' # 10:00 по Москве (UTC+3); поменяй под своё время
+    - cron: '0 19 * * *' # 21:00 по Мадриду летом (UTC+2); зимой (UTC+1) придёт в 20:00
   workflow_dispatch:
 
 permissions:
