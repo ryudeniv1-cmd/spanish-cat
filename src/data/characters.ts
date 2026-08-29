@@ -31,7 +31,7 @@ export type Character = CharacterBase &
 export const CHARACTERS: Character[] = [
   { id: 'amidala', name: 'Amidala', unlockType: 'always', clips: ['amidala-idle-1.mp4', 'amidala-idle-2.mp4', 'amidala-idle-3.mp4'] },
   { id: 'ahsoka', name: 'Ahsoka', unlockType: 'level', unlockValue: 'A2', clips: ['asoca-idle-1.mp4'] },
-  { id: 'slot-b1', name: '', unlockType: 'level', unlockValue: 'B1', clips: [] },
+  { id: 'aminaya', name: 'Aminaya', unlockType: 'level', unlockValue: 'B1', clips: ['aminaya-idle-1.mp4'] },
   { id: 'slot-b2', name: '', unlockType: 'level', unlockValue: 'B2', clips: [] },
   { id: 'slot-c1', name: '', unlockType: 'level', unlockValue: 'C1', clips: [] },
   { id: 'slot-2500', name: '', unlockType: 'words', unlockValue: 2500, clips: [] },
