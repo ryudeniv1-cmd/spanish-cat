@@ -1,6 +1,27 @@
+# зависимости и сборка
 node_modules/
 dist/
 *.local
+*.log
 .DS_Store
+
+# артефакты локального тестирования
 .playwright-mcp/
 *.png
+
+# секреты и ключи — никогда не коммитить
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+.ssh/
+credentials*
+secrets*
+
+# базы и личные данные
+*.db
+*.sqlite*
+export*.json
+backup*.json
+spanish-export-*.json
