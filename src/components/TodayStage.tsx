@@ -16,8 +16,15 @@ type RGB = [number, number, number];
 const COLD: RGB = [77, 141, 255]; // дальние кольца уходят в холодный синий
 const WHITE: RGB = [255, 255, 255];
 
+/** Понимает и `rgb(r, g, b)` из CSS-переменной, и `#rrggbb` из данных клинка. */
 function parseRgb(v: string, fallback: RGB): RGB {
-  const m = v.match(/(\d+(?:\.\d+)?)/g);
+  const s = v.trim();
+  if (s.startsWith('#')) {
+    const n = parseInt(s.slice(1), 16);
+    if (Number.isNaN(n)) return fallback;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const m = s.match(/(\d+(?:\.\d+)?)/g);
   if (!m || m.length < 3) return fallback;
   return [Number(m[0]), Number(m[1]), Number(m[2])];
 }
@@ -68,11 +75,11 @@ function makeRings(): Ring[] {
   for (let i = 0; i < 8; i++) {
     const kind = kinds[i];
     // пунктирные крутятся заметно быстрее сплошных: 8..40 с на оборот
-    const period = kind === 'dash' ? 8 + rnd() * 8 : kind === 'arc' ? 14 + rnd() * 12 : 26 + rnd() * 14;
+    const period = kind === 'dash' ? 16 + rnd() * 16 : kind === 'arc' ? 30 + rnd() * 20 : 55 + rnd() * 25;
     const sparks: Ring['sparks'] = [];
     const n = 3 + Math.floor(rnd() * 4);
     for (let s = 0; s < n; s++) {
-      sparks.push({ a0: rnd() * Math.PI * 2, sp: (0.1 + rnd() * 0.28) * (rnd() < 0.5 ? -1 : 1), size: 0.8 + rnd() * 2.2 });
+      sparks.push({ a0: rnd() * Math.PI * 2, sp: (0.03 + rnd() * 0.07) * (rnd() < 0.5 ? -1 : 1), size: 0.8 + rnd() * 2.2 });
     }
     out.push({
       r: 0.3 + (i / 7) * 0.7,
@@ -108,12 +115,23 @@ function spawn(p: Particle, rx: number, ry: number, cx: number, cy: number): voi
   p.x = cx + Math.cos(a) * rx * rr;
   p.y = cy + Math.sin(a) * ry * rr;
   p.depth = Math.random();
-  p.vy = 26 + Math.random() * 46;
+  p.vy = 14 + Math.random() * 26;
   p.ph = Math.random() * Math.PI * 2;
-  p.amp = 3 + Math.random() * 10;
+  p.amp = 3 + Math.random() * 9;
   p.size = 0.6 + p.depth * 2.2;
   p.age = 0;
-  p.life = 1.5 + Math.random() * 1.5;
+  p.life = 2.6 + Math.random() * 2.6;
+}
+
+/** Искра у лезвия: у старших клинков часть летит наружу, у 12-го — внутрь. */
+interface Spark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  age: number;
+  life: number;
+  size: number;
 }
 
 interface Props {
@@ -142,6 +160,8 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const rings = makeRings();
     const particles: Particle[] = [];
+    const sparks: Spark[] = [];
+    let sparkDebt = 0;
     const refl = document.createElement('canvas');
     const rctx = refl.getContext('2d');
 
@@ -155,6 +175,70 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
     let tick = 0;
     let accent: RGB = [79, 216, 255];
     let accent2: RGB = [159, 243, 236];
+    let charX = 0;
+    let groundY = 0;
+
+    // Куда именно ролик поставил фигуру, знает только сам кадр: у клипов
+    // разный запас снизу и по бокам. Меряем габарит один раз на ролик и
+    // сдвигаем видео так, чтобы подошвы легли на центр эллипса, а середина
+    // фигуры совпала с осью платформы.
+    const aligned = new WeakMap<HTMLVideoElement, { src: string; cx: number; by: number }>();
+
+    const applyAlign = (v: HTMLVideoElement, info: { cx: number; by: number }) => {
+      const elW = v.offsetWidth;
+      const elH = v.offsetHeight;
+      if (!elW || !elH || !v.videoWidth) return;
+      const ar = v.videoWidth / v.videoHeight;
+      let dw = elW;
+      let dh = elW / ar;
+      if (dh > elH) {
+        dh = elH;
+        dw = elH * ar;
+      }
+      const ox = v.offsetLeft + (elW - dw) / 2; // object-position: center
+      const oy = v.offsetTop + (elH - dh); // ...bottom
+      const dx = charX - (ox + info.cx * dw);
+      const dy = groundY - (oy + info.by * dh);
+      v.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+    };
+
+    const alignVideo = (v: HTMLVideoElement) => {
+      if (!rctx || v.readyState < 2 || !v.videoWidth) return;
+      const cached = aligned.get(v);
+      if (cached && cached.src === v.currentSrc) {
+        applyAlign(v, cached);
+        return;
+      }
+      rctx.clearRect(0, 0, refl.width, refl.height);
+      rctx.drawImage(v, 0, 0, refl.width, refl.height);
+      let d: Uint8ClampedArray;
+      try {
+        d = rctx.getImageData(0, 0, refl.width, refl.height).data;
+      } catch {
+        return; // кадр ещё не готов
+      }
+      let minX = refl.width;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < refl.height; y++) {
+        for (let x = 0; x < refl.width; x++) {
+          const i = (y * refl.width + x) * 4;
+          if (d[i] + d[i + 1] + d[i + 2] > 96) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX <= minX || maxY < 0) return;
+      const info = {
+        src: v.currentSrc,
+        cx: (minX + maxX + 1) / 2 / refl.width,
+        by: (maxY + 1) / refl.height,
+      };
+      aligned.set(v, info);
+      applyAlign(v, info);
+    };
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -177,11 +261,15 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
     readAccent();
 
     // --- меч ---
-    const drawSaber = (ctx: CanvasRenderingContext2D, cx: number, groundY: number) => {
+    // Ореол намеренно узкий: не больше haloPx вокруг лезвия. Зрелищность
+    // старших клинков даёт не размер свечения, а частицы и детали.
+    const drawSaber = (ctx: CanvasRenderingContext2D, cx: number, groundY: number, dt: number) => {
       const b = bladeRef.current;
       if (!b) return;
       const tier = b.tier;
-      const k = (tier - 1) / 11; // 0 у Ember, 1 у Singularity
+      const k = (tier - 1) / 11;
+      const core = parseRgb(b.core, WHITE);
+      const dark = tier >= 11;
 
       const total = h * 0.74;
       const hiltH = total * 0.28 * (b.hilt.len / 1.1);
@@ -190,71 +278,177 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       const hiltTop = groundY - hiltH;
       const bladeBottom = hiltTop + 2;
       const bladeTop = bladeBottom - bladeH;
+      const bodyW = Math.max(2.2, hw * 0.3);
 
-      const core = mix(accent, WHITE, 0.75);
-      // лёгкая нестабильность энергии: колебание 5..8 %, не мигание
+      // нестабильность энергии: колебание 5..8 %, не мигание
       const flick = reduced ? 1 : 1 + 0.045 * Math.sin(t * 3.1) + 0.02 * Math.sin(t * 7.7 + 1.3);
 
-      ctx.save();
+      // Сначала ореол, потом корпус: если наоборот, проходы с 'lighter'
+      // засвечивают лезвие изнутри и тёмные клинки перестают быть тёмными.
       ctx.globalCompositeOperation = 'lighter';
-
-      // подсветка фона вокруг меча — заметна с 7 уровня
-      if (tier >= 7) {
-        const gr = ctx.createRadialGradient(cx, (bladeTop + bladeBottom) / 2, 0, cx, (bladeTop + bladeBottom) / 2, bladeH * 0.75);
-        gr.addColorStop(0, css(accent, 0.03 + k * 0.055));
-        gr.addColorStop(1, css(accent, 0));
-        ctx.fillStyle = gr;
-        ctx.fillRect(cx - bladeH, bladeTop - bladeH * 0.3, bladeH * 2, bladeH * 1.6);
-      }
-
-      // ореол: несколько проходов от широкого к узкому. С уровнем растут
-      // и ширина, и яркость; с 10-го добавляется второй, ещё более широкий
-      const passes = 6 + Math.round(k * 3);
-      const haloW = hw * (1.5 + k * 1.9) * flick;
-      for (let i = passes; i >= 1; i--) {
-        const f = i / passes;
-        const ww = haloW * f;
-        ctx.fillStyle = css(accent, (0.038 + k * 0.016) * (1 - f * 0.45));
-        rrect(ctx, cx - ww, bladeTop - ww * 0.5, ww * 2, bladeH + ww * 0.5, ww);
-        ctx.fill();
-      }
-      if (tier >= 10) {
-        const ww = haloW * 2.1;
-        ctx.fillStyle = css(accent2, 0.022 + k * 0.018);
-        rrect(ctx, cx - ww, bladeTop - ww * 0.4, ww * 2, bladeH + ww * 0.4, ww);
+      const haloPx = (8 + k * 4) * flick;
+      for (let i = 4; i >= 1; i--) {
+        const ext = (haloPx * i) / 4;
+        ctx.fillStyle = css(accent, 0.16 * (1 - (i - 1) / 4.6));
+        rrect(ctx, cx - bodyW - ext, bladeTop - ext, (bodyW + ext) * 2, bladeH + ext, bodyW + ext);
         ctx.fill();
       }
 
-      // средний слой в цвете клинка
-      const midW = hw * 0.42 * flick;
-      ctx.fillStyle = css(accent, 0.95);
-      rrect(ctx, cx - midW, bladeTop, midW * 2, bladeH, midW);
-      ctx.fill();
-
-      // бегущие волны яркости по лезвию — с 4 уровня
-      if (tier >= 4 && !reduced) {
-        const bands = 1 + Math.floor(k * 3);
-        for (let i = 0; i < bands; i++) {
-          const p = ((t * (0.22 + k * 0.3) + i / bands) % 1);
-          const y = bladeBottom - p * bladeH;
-          const bh = bladeH * (0.1 + k * 0.1);
-          const g = ctx.createLinearGradient(0, y - bh / 2, 0, y + bh / 2);
-          const peak = 0.09 + k * 0.12;
-          g.addColorStop(0, css(accent, 0));
-          g.addColorStop(0.5, css(mix(accent, WHITE, 0.4), peak));
-          g.addColorStop(1, css(accent, 0));
-          ctx.fillStyle = g;
-          ctx.fillRect(cx - midW * 2, y - bh / 2, midW * 4, bh);
+      // 12: аура переливается, вокруг слегка ведёт пространство
+      if (tier >= 12 && !reduced) {
+        const sh = 0.5 + 0.5 * Math.sin(t * 0.6);
+        const aur = mix(accent, [26, 10, 48], sh);
+        const flow = (t * 0.12) % 1;
+        const g = ctx.createLinearGradient(0, bladeTop, 0, bladeBottom);
+        g.addColorStop(0, css(aur, 0));
+        g.addColorStop(Math.max(0.01, flow), css(aur, 0.3));
+        g.addColorStop(Math.min(0.99, flow + 0.35), css(mix(accent, WHITE, 0.25), 0.16));
+        g.addColorStop(1, css(aur, 0));
+        ctx.fillStyle = g;
+        rrect(ctx, cx - bodyW - haloPx, bladeTop - haloPx, (bodyW + haloPx) * 2, bladeH + haloPx * 2, bodyW + haloPx);
+        ctx.fill();
+        // искажение: редкие точки уводит по дуге вокруг лезвия
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + t * 0.15;
+          const rr = 22 + ((i * 7) % 26) + Math.sin(t * 0.8 + i) * 5;
+          const yy = bladeTop + bladeH * ((i * 0.37) % 1);
+          ctx.fillStyle = css(mix(accent, WHITE, 0.4), 0.16 + 0.1 * Math.sin(t + i));
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * rr, yy + Math.sin(a) * 5, 0.9, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
 
-      // ядро — почти белое и узкое
-      const coreW = Math.max(1, hw * 0.16) * flick;
-      ctx.fillStyle = css(core, 0.98);
-      rrect(ctx, cx - coreW, bladeTop + 1, coreW * 2, bladeH - 2, coreW);
+      // корпус: обычный режим, поэтому тёмные клинки действительно тёмные
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = css(core, 1);
+      rrect(ctx, cx - bodyW, bladeTop, bodyW * 2, bladeH, bodyW);
       ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
 
-      ctx.restore();
+      if (dark) {
+        // тёмное лезвие: светится только кромка
+        const ew = Math.max(1, bodyW * 0.34);
+        ctx.fillStyle = css(accent, 0.9);
+        rrect(ctx, cx - bodyW, bladeTop, ew, bladeH, ew / 2);
+        ctx.fill();
+        rrect(ctx, cx + bodyW - ew, bladeTop, ew, bladeH, ew / 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = css(accent, 0.7);
+        rrect(ctx, cx - bodyW, bladeTop, bodyW * 2, bladeH, bodyW);
+        ctx.fill();
+        const cw = bodyW * 0.45;
+        ctx.fillStyle = css(mix(core, WHITE, 0.5), 0.95);
+        rrect(ctx, cx - cw, bladeTop + 1, cw * 2, bladeH - 2, cw);
+        ctx.fill();
+      }
+
+      // 9+: импульсы снизу вверх и дымка у гарды
+      if (tier >= 9 && !reduced) {
+        const bands = tier >= 11 ? 3 : 2;
+        for (let i = 0; i < bands; i++) {
+          const pr = (t * 0.32 + i / bands) % 1;
+          const y = bladeBottom - pr * bladeH;
+          const bh = bladeH * 0.09;
+          const g = ctx.createLinearGradient(0, y - bh / 2, 0, y + bh / 2);
+          g.addColorStop(0, css(accent, 0));
+          g.addColorStop(0.5, css(mix(accent, WHITE, 0.45), 0.22));
+          g.addColorStop(1, css(accent, 0));
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - bodyW - 4, y - bh / 2, (bodyW + 4) * 2, bh);
+        }
+        const hg = ctx.createRadialGradient(cx, bladeBottom, 0, cx, bladeBottom, 26);
+        hg.addColorStop(0, css(accent, 0.16));
+        hg.addColorStop(1, css(accent, 0));
+        ctx.fillStyle = hg;
+        ctx.fillRect(cx - 30, bladeBottom - 30, 60, 60);
+      }
+
+      // 11: отблески по кромке и медленные дуги вокруг
+      if (tier >= 11 && !reduced) {
+        for (let i = 0; i < 3; i++) {
+          const pr = (t * 0.45 + i / 3) % 1;
+          const y = bladeBottom - pr * bladeH;
+          ctx.fillStyle = css(mix(accent, WHITE, 0.6), 0.5 * (1 - Math.abs(pr - 0.5) * 1.2));
+          rrect(ctx, cx - bodyW, y - bladeH * 0.05, 1.6, bladeH * 0.1, 0.8);
+          ctx.fill();
+          rrect(ctx, cx + bodyW - 1.6, y - bladeH * 0.05, 1.6, bladeH * 0.1, 0.8);
+          ctx.fill();
+        }
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 3 && tier === 11; i++) {
+          const a = t * (0.12 + i * 0.05) + (i * Math.PI * 2) / 3;
+          const rr = 26 + i * 11;
+          ctx.strokeStyle = css(accent, 0.3 - i * 0.07);
+          ctx.beginPath();
+          ctx.ellipse(cx, bladeTop + bladeH * 0.5, rr, rr * 2.6, 0, a, a + 1.5);
+          ctx.stroke();
+        }
+      }
+
+      // искры у лезвия: с 6 уровня, у 12-го втягиваются внутрь
+      if (tier >= 6 && !reduced) {
+        const inward = tier >= 12;
+        const rate = tier <= 8 ? 7 : tier <= 10 ? 15 : 13;
+        const cap = tier <= 8 ? 10 : tier <= 10 ? 24 : 22;
+        sparkDebt += rate * dt;
+        while (sparkDebt >= 1 && sparks.length < cap) {
+          sparkDebt -= 1;
+          const y = bladeTop + Math.random() * bladeH;
+          const side = Math.random() < 0.5 ? -1 : 1;
+          if (inward) {
+            const d = 24 + Math.random() * 34;
+            sparks.push({
+              x: cx + side * d,
+              y: y + (Math.random() - 0.5) * 50,
+              vx: -side * (16 + Math.random() * 24),
+              vy: -4 + Math.random() * 8,
+              age: 0,
+              life: 0.8 + Math.random() * 0.7,
+              size: 0.6 + Math.random(),
+            });
+          } else {
+            sparks.push({
+              x: cx + side * bodyW,
+              y,
+              vx: side * (10 + Math.random() * 26),
+              vy: -(14 + Math.random() * 38),
+              age: 0,
+              life: 0.5 + Math.random() * 0.5,
+              size: 0.6 + Math.random() * 1.2,
+            });
+          }
+        }
+        if (sparkDebt > 4) sparkDebt = 4;
+        const trail = tier >= 9;
+        const scol = tier >= 11 ? mix(accent, [40, 16, 70], 0.35) : mix(accent, WHITE, 0.35);
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const sp = sparks[i];
+          sp.age += dt;
+          if (sp.age >= sp.life) {
+            sparks.splice(i, 1);
+            continue;
+          }
+          sp.x += sp.vx * dt;
+          sp.y += sp.vy * dt;
+          const a = 1 - sp.age / sp.life;
+          if (trail) {
+            ctx.strokeStyle = css(scol, a * 0.35);
+            ctx.lineWidth = sp.size * 0.9;
+            ctx.beginPath();
+            ctx.moveTo(sp.x, sp.y);
+            ctx.lineTo(sp.x - sp.vx * 0.05, sp.y - sp.vy * 0.05);
+            ctx.stroke();
+          }
+          ctx.fillStyle = css(scol, a * 0.95);
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, sp.size * a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
 
       // --- рукоять: тёмный металл с бликами ---
       ctx.save();
@@ -363,38 +557,6 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       }
       ctx.restore();
 
-      // искры у гарды и вдоль лезвия — плотность растёт с уровнем
-      if (!reduced) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        const n = 2 + Math.round(k * 22);
-        for (let i = 0; i < n; i++) {
-          const ph = (t * (0.3 + k * 0.6) + i * 0.137) % 1;
-          const y = bladeBottom - ph * bladeH * (tier < 4 ? 0.25 : 1);
-          const sway = Math.sin(t * 2 + i) * hw * (0.3 + k * 0.5);
-          const a = (1 - ph) * (0.5 + k * 0.5);
-          const sz = 0.5 + Math.random() * 0.6 + k;
-          ctx.fillStyle = css(mix(accent, WHITE, 0.35), a);
-          ctx.beginPath();
-          ctx.arc(cx + sway, y, sz, 0, Math.PI * 2);
-          ctx.fill();
-          if (tier >= 4) {
-            ctx.fillStyle = css(accent, a * 0.4);
-            ctx.beginPath();
-            ctx.arc(cx + sway * 0.8, y + bladeH * 0.03, sz * 0.7, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        // дымка у основания с 4 уровня
-        if (tier >= 4) {
-          const g = ctx.createRadialGradient(cx, bladeBottom, 0, cx, bladeBottom, hw * (2 + k * 3));
-          g.addColorStop(0, css(accent, 0.1 + k * 0.12));
-          g.addColorStop(1, css(accent, 0));
-          ctx.fillStyle = g;
-          ctx.fillRect(cx - hw * 6, bladeBottom - hw * 6, hw * 12, hw * 12);
-        }
-        ctx.restore();
-      }
     };
 
     // --- платформа ---
@@ -459,9 +621,14 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       ctx.restore();
     };
 
+    let lastDraw = 0;
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       if (!visible) return;
+      // при prefers-reduced-motion сцена статична: гонять её 60 раз в секунду
+      // незачем, хватает редкой перерисовки на смену клинка и размера
+      if (reduced && now - lastDraw < 250) return;
+      lastDraw = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       t += dt;
@@ -473,11 +640,13 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       bctx.clearRect(0, 0, w, h);
       fctx.clearRect(0, 0, w, h);
 
-      const groundY = h * groundFrac;
+      groundY = h * groundFrac;
       const saberX = w * 0.21;
-      const charX = w * 0.66;
+      charX = w * 0.66;
       const rx = Math.min(w * 0.3, h * 0.4);
       const ry = rx * 0.28;
+
+      for (const v of box.querySelectorAll<HTMLVideoElement>('video.hero-video')) alignVideo(v);
 
       // отражение фигуры на «полу»
       const vid = box.querySelector<HTMLVideoElement>('video.hero-video[style*="opacity: 1"]');
@@ -517,12 +686,12 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
       bctx.restore();
 
       drawRings(bctx, charX, groundY, rx, ry, false);
-      drawSaber(bctx, saberX, groundY);
+      drawSaber(bctx, saberX, groundY, dt);
       drawRings(fctx, charX, groundY, rx, ry, true);
 
       // восходящие частицы
       if (!reduced) {
-        const want = 50;
+        const want = 32;
         while (particles.length < want) {
           const p: Particle = { x: 0, y: 0, vy: 0, ph: 0, amp: 0, size: 0, depth: 0, age: 0, life: 1 };
           spawn(p, rx, ry, charX, groundY);
@@ -534,8 +703,8 @@ export function TodayStage({ blade, groundFrac = 0.84, children }: Props) {
           p.age += dt;
           if (p.age >= p.life) spawn(p, rx, ry, charX, groundY);
           const k = p.age / p.life;
-          const y = p.y - k * rise * (p.vy / 46);
-          const x = p.x + Math.sin(p.ph + t * 1.8) * p.amp * k;
+          const y = p.y - k * rise * (p.vy / 26);
+          const x = p.x + Math.sin(p.ph + t * 0.9) * p.amp * k;
           // из нуля, ярче всего на нижней трети, полностью гаснут вверху
           const a = k < 0.33 ? k / 0.33 : 1 - (k - 0.33) / 0.67;
           const ctx = p.depth > 0.5 ? fctx : bctx;

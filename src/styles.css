@@ -444,9 +444,11 @@ button {
   }
 }
 
+/* translate, а не transform: у ролика transform занят выравниванием фигуры
+   по платформе, а эти два свойства складываются независимо. */
 @keyframes today-parallax {
   to {
-    transform: translateY(52px);
+    translate: 0 52px;
     opacity: 0.5;
   }
 }
